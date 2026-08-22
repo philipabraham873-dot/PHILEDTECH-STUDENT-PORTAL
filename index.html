@@ -1137,10 +1137,6 @@ async function submitChangePassword(){
   const confirmNext = document.getElementById("cpConfirm").value.trim();
 
   if(!current || !next || !confirmNext){ showCpError("Please fill in all three fields."); return; }
-  const currentOk = currentStudent.passwordHash
-    ? await verifySecret(current, currentStudent.passwordSalt, currentStudent.passwordHash)
-    : String(currentStudent.password) === current;
-  if(!currentOk){ showCpError("Current password is incorrect."); return; }
   if(next.length < 4){ showCpError("New password must be at least 4 characters."); return; }
   if(next !== confirmNext){ showCpError("New password and confirmation don't match."); return; }
 
@@ -1148,33 +1144,36 @@ async function submitChangePassword(){
   btn.disabled = true; btn.textContent = "Saving…";
 
   try{
-    const { hash, salt } = await hashSecret(next);
-    const coreRef = fbDb.collection("schools").doc(portalCode).collection("data").doc("core");
-    await fbDb.runTransaction(async (tx)=>{
-      const snap = await tx.get(coreRef);
-      if(!snap.exists) throw new Error("School data not found.");
-      const data = snap.data() || {};
-      const studentsArr = data.students || [];
-      const idx = studentsArr.findIndex(s => s.id === currentStudent.id);
-      if(idx === -1) throw new Error("Student record not found.");
-      // Password changes only — the Term/Session this access is valid for
-      // (accessTerm/accessSession) is left untouched, so the new password
-      // still expires exactly like the original RRR would have. The old
-      // plaintext "password" field (if any, from a pre-hashing account) is
-      // dropped here for good — only the salted hash remains from now on.
-      const updated = Object.assign({}, studentsArr[idx], { passwordHash: hash, passwordSalt: salt });
-      delete updated.password;
-      studentsArr[idx] = updated;
-      tx.set(coreRef, { students: studentsArr }, { merge: true });
+    // The current password is re-checked server-side, and the write itself
+    // happens there too — the browser no longer has direct write access to
+    // student records, only read access, so this has to go through a
+    // function instead of a client-side Firestore transaction.
+    const res = await fetch("https://philedtech-student-portal.netlify.app/.netlify/functions/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        syncCode: portalCode,
+        studentId: currentStudent.id,
+        currentPassword: current,
+        newPassword: next
+      })
     });
+    const data = await res.json();
+    if(!res.ok || !data.success){
+      showCpError(data.error || "Couldn't save your new password. Try again.");
+      btn.disabled = false; btn.textContent = "Save";
+      return;
+    }
 
     delete currentStudent.password;
-    currentStudent.passwordHash = hash;
-    currentStudent.passwordSalt = salt;
+    delete currentStudent.passwordHash;
+    delete currentStudent.passwordSalt;
     schoolData.students = schoolData.students.map(s => {
       if(s.id !== currentStudent.id) return s;
-      const updated = Object.assign({}, s, {passwordHash: hash, passwordSalt: salt});
+      const updated = Object.assign({}, s);
       delete updated.password;
+      delete updated.passwordHash;
+      delete updated.passwordSalt;
       return updated;
     });
     localStorage.setItem("portalSession", JSON.stringify({code: portalCode, id: currentStudent.id, password: next}));
