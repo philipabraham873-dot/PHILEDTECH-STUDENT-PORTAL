@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Student Portal</title>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  :root{
+    --primary:#0f172a;
+    --secondary:#2563eb;
+    --light:#f1f5f9;
+    --green:#16a34a;
+    --red:#dc2626;
+    --amber:#d97706;
+    --sidebar-w:230px;
+    --sidebar-bg:#111827;
+    --sidebar-bg-2:#1e293b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Segoe UI',Arial,sans-serif;background:var(--light);color:#1e293b;min-height:100vh;}
+
+    .app-shell{display:none;min-height:100vh;}
+  .app-shell.show{display:flex;}
+  .sidebar{
+    width:var(--sidebar-w);flex-shrink:0;
+    background:linear-gradient(180deg,var(--sidebar-bg) 0%,var(--sidebar-bg-2) 100%);
+    color:#fff;display:flex;flex-direction:column;
+    position:fixed;top:0;left:0;bottom:0;z-index:500;
+    transition:transform .25s ease;overflow-y:auto;
+  }
+  .sidebar::-webkit-scrollbar{width:6px;}
+  .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px;}
+  .nav-brand{display:flex;align-items:center;gap:10px;padding:22px 18px;border-bottom:1px solid rgba(255,255,255,.08);}
+  .nav-logo{height:34px;width:34px;object-fit:contain;border-radius:8px;background:#fff;display:none;}
+  .nav-brand strong{font-size:14.5px;line-height:1.35;display:block;}
+  .nav-brand span{font-size:11.5px;color:#94a3b8;}
+  #studentNav{display:flex;flex-direction:column;padding:14px 10px;gap:2px;flex:1;}
+  #studentNav button{
+    background:none;border:none;color:#cbd5e1;text-align:left;
+    padding:11px 14px;border-radius:9px;font-size:14px;cursor:pointer;
+    display:flex;align-items:center;gap:12px;transition:background .15s,color .15s;width:100%;
+  }
+  #studentNav button i{width:18px;text-align:center;font-size:15px;margin:0;}
+  #studentNav button:hover{background:rgba(255,255,255,.08);color:#fff;}
+  #studentNav button.active{background:var(--secondary);color:#fff;box-shadow:0 6px 14px rgba(37,99,235,.35);}
+  #studentNav .logout-btn{background:rgba(220,38,38,.16) !important;color:#fca5a5 !important;margin-top:8px;}
+  #studentNav .logout-btn:hover{background:var(--red) !important;color:#fff !important;}
+  .nav-badge{background:var(--red);color:#fff;font-size:10px;font-weight:800;border-radius:999px;padding:1px 6px;margin-left:auto;}
+
+  .main-content{flex:1;margin-left:var(--sidebar-w);min-width:0;display:flex;flex-direction:column;}
+  .app-topbar{
+    background:#fff;display:flex;align-items:center;justify-content:space-between;
+    padding:14px 24px;position:sticky;top:0;z-index:400;box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .app-topbar-left{display:flex;align-items:center;gap:14px;}
+  .app-topbar-left h2{font-size:17px;margin:0;color:var(--primary);}
+  .menu-toggle{display:none;background:none !important;border:none;color:var(--primary) !important;font-size:20px;cursor:pointer;padding:4px;margin:0 !important;}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:490;}
+  @media (max-width:900px){
+    .sidebar{transform:translateX(-100%);}
+    .sidebar.open{transform:translateX(0);box-shadow:0 0 30px rgba(0,0,0,.4);}
+    .main-content{margin-left:0;}
+    .menu-toggle{display:inline-flex !important;}
+    .sidebar-overlay.show{display:block;}
+    .app-topbar{padding:12px 16px;}
+  }
+  .view{display:none;}
+  .view.active-view{display:block;}
+  .view-container{padding:18px 24px;max-width:1100px;margin:0 auto;width:100%;}
+
+    .welcome-card{background:linear-gradient(135deg,var(--primary),#1e293b);color:#fff;border-radius:16px;padding:24px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}
+  .welcome-card h2{margin:0 0 4px;font-size:20px;}
+  .welcome-card p{margin:0;font-size:13.5px;opacity:.85;}
+  .welcome-avatar{width:60px;height:72px;border-radius:8px;object-fit:cover;border:2px solid rgba(255,255,255,.4);flex-shrink:0;background:rgba(255,255,255,.12);}
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px;}
+  .dash-tile{background:#fff;border-radius:14px;padding:18px 16px;box-shadow:0 2px 10px rgba(0,0,0,.07);cursor:pointer;transition:transform .15s,box-shadow .15s;border:none;text-align:left;font-family:inherit;}
+  .dash-tile:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,.12);}
+  .dash-tile .di{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;margin-bottom:10px;}
+  .dash-tile .dn{font-size:22px;font-weight:800;color:var(--primary);}
+  .dash-tile .dl{font-size:12.5px;color:#64748b;margin-top:2px;}
+  .di-blue{background:linear-gradient(135deg,#2563eb,#1e40af);}
+  .di-green{background:linear-gradient(135deg,#16a34a,#15803d);}
+  .di-purple{background:linear-gradient(135deg,#7c3aed,#5b21b6);}
+  .di-amber{background:linear-gradient(135deg,#f59e0b,#d97706);}
+  .section-heading{font-size:14px;font-weight:700;color:#334155;margin:20px 0 10px;text-transform:uppercase;letter-spacing:.03em;}
+
+    .announce-card{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:0 2px 10px rgba(0,0,0,.06);border-left:4px solid var(--secondary);}
+  .announce-card h4{margin:0;font-size:15px;color:var(--primary);}
+  .announce-card .meta{font-size:11.5px;color:#94a3b8;margin-top:2px;}
+  .announce-card p{margin:10px 0 0;font-size:13.5px;color:#334155;line-height:1.55;white-space:pre-wrap;}
+
+    .profile-card{background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(15,23,42,.06);padding:22px 24px;margin-bottom:16px;}
+  .profile-card h3{margin:0 0 14px;font-size:16px;color:var(--primary);}
+  .profile-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;}
+  .profile-info-grid div span.lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:2px;}
+  .profile-info-grid div span.val{font-size:14px;font-weight:600;color:var(--primary);}
+  .passport-upload-row{display:flex;gap:20px;align-items:center;flex-wrap:wrap;}
+  .passport-preview{width:110px;height:132px;border-radius:10px;border:2px dashed #cbd5e1;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;color:#94a3b8;font-size:11.5px;text-align:center;padding:8px;}
+  .passport-preview img{width:100%;height:100%;object-fit:cover;}
+  .passport-actions{display:flex;flex-direction:column;gap:8px;}
+  .passport-actions input[type=file]{font-size:13px;}
+  .passport-hint{font-size:12px;color:#94a3b8;margin-top:4px;max-width:280px;}
+
+    .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+    background:radial-gradient(circle at 20% 20%, #1e293b 0%, #0f172a 55%, #020617 100%);}
+  .login-box{background:#fff;width:100%;max-width:420px;border-radius:18px;padding:38px 32px;box-shadow:0 25px 70px rgba(0,0,0,.4);}
+  .login-box .badge{display:inline-flex;align-items:center;gap:8px;background:#eef2ff;color:var(--secondary);font-size:12.5px;font-weight:700;padding:6px 12px;border-radius:999px;letter-spacing:.04em;text-transform:uppercase;}
+  .login-box h1{font-size:24px;margin:14px 0 6px;color:var(--primary);}
+  .login-box p.sub{color:#64748b;font-size:14px;margin:0 0 24px;line-height:1.5;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;}
+  .field input{width:100%;padding:13px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px;transition:border-color .15s;}
+  .field input:focus{outline:none;border-color:var(--secondary);}
+  .field input#loginCode, .field input#loginPin{text-transform:uppercase;letter-spacing:.06em;}
+  .login-btn{width:100%;padding:14px;background:var(--secondary);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:6px;transition:background .15s;}
+  .login-btn:hover{background:#1d4ed8;}
+  .login-btn:disabled{background:#94a3b8;cursor:default;}
+  .login-error{background:#fef2f2;color:var(--red);border:1px solid #fecaca;padding:10px 12px;border-radius:8px;font-size:13.5px;margin-bottom:16px;display:none;}
+  .login-help{margin-top:22px;font-size:12.5px;color:#94a3b8;text-align:center;line-height:1.6;}
+
+    .app{display:none;max-width:900px;margin:0 auto;padding:18px 16px 60px;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+  .topbar .who{font-size:14px;color:#475569;}
+  .topbar .who strong{color:var(--primary);}
+  .topbar button{background:#fff;border:1.5px solid #e2e8f0;color:#475569;padding:9px 14px;border-radius:8px;font-size:13.5px;cursor:pointer;}
+  .topbar button:hover{border-color:#cbd5e1;}
+
+  .selector-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+  .selector-row select{flex:1;min-width:140px;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;background:#fff;}
+
+  .status-msg{text-align:center;color:#64748b;padding:60px 20px;font-size:14.5px;}
+  .status-msg.error{color:var(--red);}
+
+  .card{background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(15,23,42,.06);overflow:hidden;}
+  .rc-header{background:linear-gradient(135deg,var(--primary),#1e293b);color:#fff;padding:26px 24px;display:flex;gap:16px;align-items:center;}
+  .rc-header img.logo{width:56px;height:56px;border-radius:50%;object-fit:cover;background:#fff;flex-shrink:0;}
+  .rc-header .logo-fallback{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;text-align:center;padding:4px;}
+  .rc-header h2{margin:0 0 3px;font-size:18px;letter-spacing:.02em;}
+  .rc-header p{margin:0;font-size:12.5px;opacity:.8;}
+
+  .rc-student{padding:18px 24px;border-bottom:1px solid #f1f5f9;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
+  .rc-student div span.lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:2px;}
+  .rc-student div span.val{font-size:14.5px;font-weight:600;color:var(--primary);}
+
+  .summary-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:1px;background:#f1f5f9;}
+  .summary-cell{background:#fff;padding:16px 14px;text-align:center;}
+  .summary-cell .n{font-size:22px;font-weight:800;color:var(--primary);}
+  .summary-cell .l{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
+  .summary-cell.grade .n{color:var(--secondary);}
+
+  table.results{width:100%;border-collapse:collapse;font-size:13.5px;}
+  table.results th{background:#f8fafc;color:#475569;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;padding:10px 8px;text-align:left;border-bottom:2px solid #e2e8f0;}
+  table.results td{padding:10px 8px;border-bottom:1px solid #f1f5f9;}
+  table.results td.num, table.results th.num{text-align:center;}
+  table.results tr:last-child td{border-bottom:none;}
+  .grade-pill{display:inline-block;padding:2px 9px;border-radius:6px;font-weight:700;font-size:12.5px;}
+  .grade-A{background:#dcfce7;color:#166534;}
+  .grade-B{background:#dbeafe;color:#1e40af;}
+  .grade-C{background:#fef9c3;color:#854d0e;}
+  .grade-D,.grade-E{background:#ffedd5;color:#9a3412;}
+  .grade-F{background:#fee2e2;color:#991b1b;}
+
+  .section-title{padding:16px 24px 4px;font-size:12.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;}
+  .skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 18px;padding:6px 24px 20px;}
+  .skills-grid .skill-row{display:flex;justify-content:space-between;font-size:13.5px;padding:5px 0;border-bottom:1px dashed #f1f5f9;}
+  .skills-grid .skill-row b{color:var(--primary);}
+
+  .remarks-box{padding:16px 24px 22px;}
+  .remarks-box .remark{background:#f8fafc;border-left:3px solid var(--secondary);padding:10px 14px;border-radius:0 8px 8px 0;font-size:13.5px;margin-bottom:10px;line-height:1.5;}
+  .remarks-box .remark .who{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;}
+
+  .sig-row{display:flex;gap:24px;flex-wrap:wrap;padding:18px 24px 24px;border-top:1px solid #f1f5f9;}
+  .sig-block{text-align:center;}
+  .sig-block img{height:44px;object-fit:contain;display:block;margin:0 auto 4px;}
+  .sig-block .line{width:140px;border-top:1px solid #cbd5e1;margin:0 auto 4px;}
+  .sig-block .label{font-size:11px;color:#94a3b8;}
+  .stamp-img{position:relative;height:70px;object-fit:contain;opacity:.9;}
+
+  .action-row{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap;}
+  .action-row button{padding:11px 20px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;border:none;}
+  .btn-primary{background:var(--secondary);color:#fff;}
+  .btn-secondary{background:#fff;color:#475569;border:1.5px solid #e2e8f0 !important;}
+
+    .portal-tabs{display:flex;gap:8px;margin-bottom:18px;border-bottom:2px solid #e2e8f0;}
+  .portal-tab{background:none;border:none;padding:11px 18px;font-size:14.5px;font-weight:700;color:#64748b;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s;}
+  .portal-tab:hover{color:var(--primary);}
+  .portal-tab.active{color:var(--secondary);border-bottom-color:var(--secondary);}
+
+    .fee-card{background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(15,23,42,.06);overflow:hidden;}
+  .fee-status-banner{padding:22px 24px;text-align:center;}
+  .fee-status-banner .n{font-size:15px;font-weight:800;letter-spacing:.02em;}
+  .fee-status-banner.paid{background:#dcfce7;}
+  .fee-status-banner.paid .n{color:#166534;}
+  .fee-status-banner.partial{background:#fef9c3;}
+  .fee-status-banner.partial .n{color:#854d0e;}
+  .fee-status-banner.unpaid{background:#fee2e2;}
+  .fee-status-banner.unpaid .n{color:#991b1b;}
+  .fee-breakdown{padding:6px 24px 22px;}
+  .fee-row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px dashed #f1f5f9;font-size:14.5px;}
+  .fee-row:last-child{border-bottom:none;}
+  .fee-row .flbl{color:#64748b;}
+  .fee-row .fval{font-weight:700;color:var(--primary);}
+  .fee-row.outstanding .fval{color:var(--red);}
+  .fee-row.total-paid .fval{color:var(--green);}
+
+  @media print{
+    .topbar, .selector-row, .action-row{display:none !important;}
+    body{background:#fff;}
+    .app{padding:0;max-width:100%;}
+    .card{box-shadow:none;}
+  }
+
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal-overlay.open{display:flex;}
+  .modal-box{background:#fff;border-radius:16px;width:100%;max-width:400px;padding:28px 26px;box-shadow:0 25px 70px rgba(0,0,0,.35);}
+  .modal-box h3{margin:0 0 6px;font-size:18px;color:var(--primary);}
+  .modal-box p.sub{color:#64748b;font-size:13.5px;margin:0 0 20px;line-height:1.5;}
+  .modal-error{background:#fef2f2;color:var(--red);border:1px solid #fecaca;padding:10px 12px;border-radius:8px;font-size:13.5px;margin-bottom:14px;display:none;}
+  .modal-success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:10px 12px;border-radius:8px;font-size:13.5px;margin-bottom:14px;display:none;}
+  .modal-actions{display:flex;gap:10px;margin-top:6px;}
+  .modal-actions button{flex:1;padding:12px;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;border:none;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div class="login-wrap" id="loginScreen">
+  <div class="login-box">
+    <span class="badge">🎓 Student Portal</span>
+    <h1>Welcome, Student</h1>
+    <p class="sub">Enter your school's Portal Code, your Student ID, and your password to view your results and fee status.</p>
+
+    <div class="login-error" id="loginError"></div>
+
+    <div class="field">
+      <label>School Portal Code</label>
+      <input type="text" id="loginCode" placeholder="e.g. ABC-DEF-GHJ" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Student ID</label>
+      <input type="text" id="loginId" placeholder="e.g. STU2024001" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="loginPin" placeholder="Your RRR / password" autocomplete="off">
+    </div>
+
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Log In</button>
+    <p class="login-help">Your password (RRR) is issued on your fee invoice/receipt after you pay the school fee in full for the current term. It resets every new term — you'll need this term's RRR to log in.<br>Powered by <span id="brandVendorName">PhilTech</span>.</p>
+  </div>
+</div>
+
+<!-- ============ CHANGE PASSWORD MODAL ============ -->
+<div class="modal-overlay" id="changePasswordModal">
+  <div class="modal-box">
+    <h3>Change Password</h3>
+    <p class="sub">Set a new password for your Student Portal login. It will stop working once a new term begins, just like your original RRR.</p>
+    <div class="modal-error" id="cpError"></div>
+    <div class="modal-success" id="cpSuccess"></div>
+    <div class="field">
+      <label>Current Password</label>
+      <input type="password" id="cpCurrent" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>New Password</label>
+      <input type="password" id="cpNew" placeholder="At least 4 characters" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Confirm New Password</label>
+      <input type="password" id="cpConfirm" autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeChangePasswordModal()">Cancel</button>
+      <button class="btn-primary" id="cpSaveBtn" onclick="submitChangePassword()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP (dashboard shell, mirrors the admin app's nav) ============ -->
+<div class="app-shell" id="appScreen">
+  <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="nav-brand">
+      <img id="navLogo" class="nav-logo" alt="Logo">
+      <div>
+        <strong id="navSchoolName">Student Portal</strong><br>
+        <span id="navStudentClass"></span>
+      </div>
+    </div>
+    <div id="studentNav">
+      <button data-view="dashboard" class="active" onclick="showView('dashboard')"><i class="fas fa-th-large"></i>Dashboard</button>
+      <button data-view="results" onclick="showView('results')"><i class="fas fa-chart-bar"></i>Results</button>
+      <button data-view="fees" onclick="showView('fees')"><i class="fas fa-money-bill-wave"></i>Fees</button>
+      <button data-view="announcements" onclick="showView('announcements')"><i class="fas fa-bullhorn"></i>Announcements<span class="nav-badge" id="announceBadge" style="display:none;"></span></button>
+      <button data-view="profile" onclick="showView('profile')"><i class="fas fa-id-card"></i>Profile</button>
+      <button class="logout-btn" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i>Log Out</button>
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <header class="app-topbar">
+      <div class="app-topbar-left">
+        <button class="menu-toggle" onclick="openSidebar()"><i class="fas fa-bars"></i></button>
+        <h2 id="topbarTitle">Dashboard</h2>
+      </div>
+      <div class="who">Logged in as <strong id="topbarName">—</strong></div>
+    </header>
+
+    <div class="view-container">
+
+      <!-- ===== DASHBOARD VIEW ===== -->
+      <div class="view active-view" id="view-dashboard">
+        <div class="welcome-card">
+          <div>
+            <h2 id="welcomeName">Welcome!</h2>
+            <p id="welcomeSub"></p>
+          </div>
+          <img class="welcome-avatar" id="welcomeAvatar" style="display:none;">
+        </div>
+        <div class="dash-grid" id="dashTiles"></div>
+        <div class="section-heading">Latest Announcements</div>
+        <div id="dashAnnouncements"></div>
+      </div>
+
+      <!-- ===== RESULTS VIEW ===== -->
+      <div class="view" id="view-results">
+        <div class="selector-row">
+          <select id="termSelect" onchange="renderResult()"></select>
+          <select id="sessionSelect" onchange="renderResult()"></select>
+        </div>
+        <div id="resultArea"></div>
+      </div>
+
+      <!-- ===== FEES VIEW ===== -->
+      <div class="view" id="view-fees">
+        <div id="feesArea"></div>
+      </div>
+
+      <!-- ===== ANNOUNCEMENTS VIEW ===== -->
+      <div class="view" id="view-announcements">
+        <div id="announcementsArea"></div>
+      </div>
+
+      <!-- ===== PROFILE VIEW ===== -->
+      <div class="view" id="view-profile">
+        <div class="profile-card">
+          <h3>My Details</h3>
+          <div class="profile-info-grid" id="profileInfoGrid"></div>
+        </div>
+        <div class="profile-card">
+          <h3>Passport Photograph</h3>
+          <div class="passport-upload-row">
+            <div class="passport-preview" id="passportPreview">No Photo</div>
+            <div class="passport-actions">
+              <input type="file" id="passportFileInput" accept="image/*" onchange="handlePassportFileChange(event)">
+              <button id="passportSaveBtn" style="display:none;width:auto;" onclick="savePassportPhoto()">Save Photo</button>
+              <div class="passport-hint">Use a clear, front-facing photo, like a passport photo. It will appear on your printed result sheet (top-right) and in the school's admin records once saved.</div>
+              <div class="modal-error" id="passportError" style="display:none;"></div>
+              <div class="modal-success" id="passportSuccess" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="profile-card">
+          <h3>Account</h3>
+          <button onclick="openChangePasswordModal()">Change Password</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const BRAND = {
+  vendorName: "Phil Ed Tech",    // shown in "Powered by ___" footer
+  productTitle: "Student Portal" // browser tab title
+};
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDRTAcnWRk9n2OA9JDaJnYBFbjSTXQ4HFM",
+  authDomain: "school-software-c511c.firebaseapp.com",
+  projectId: "school-software-c511c",
+  storageBucket: "school-software-c511c.firebasestorage.app",
+  messagingSenderId: "734795422335",
+  appId: "1:734795422335:web:683009cfb020b6d441bd4a",
+  measurementId: "G-LBQPWVHRFQ"
+};
+
+let fbApp = null, fbDb = null;
+function initFirebase(){
+  if(fbApp) return;
+  fbApp = firebase.initializeApp(firebaseConfig);
+  fbDb = firebase.firestore();
+}
+
+function classUsesStreams(cls){ return cls.startsWith("SSS2") || cls.startsWith("SSS3"); }
+
+// Turns a list already sorted best-to-worst into class positions using
+// standard "1224" competition ranking: students tied on BOTH total and
+// average share the same position, and the position after a tied group
+// skips ahead by the group size instead of counting up one-by-one.
+// Applies the same way to every class level — SSS (ranked by average) and
+// Nursery/Primary/JSS (ranked by total) alike — since two students with an
+// identical total and average are indistinguishable either way. Returns an
+// array of positions aligned index-for-index with the input. Kept in sync
+// with the admin app's version.
+function computeRanks(sortedList){
+  let rank = 1;
+  return sortedList.map((r, i) => {
+    if(i > 0){
+      const prev = sortedList[i-1];
+      const tied = parseFloat(r.total) === parseFloat(prev.total) && parseFloat(r.avg) === parseFloat(prev.avg);
+      if(!tied) rank = i + 1;
+    }
+    return rank;
+  });
+}
+
+// Grade is looked up from the school's own configurable grading scale
+// (schoolData.gradingScale, synced from the admin app's Settings > Grading
+// Criteria) instead of a fixed A/B/C/D/E/F cutoff, so a school that has
+// customized its bands sees the exact same grade here as on the official
+// report card.
+function getGrade(t){
+  const scale = (schoolData && schoolData.gradingScale && schoolData.gradingScale.length) ? schoolData.gradingScale : [
+    {grade:"A", min:70, max:100}, {grade:"B", min:60, max:69}, {grade:"C", min:50, max:59},
+    {grade:"D", min:45, max:49}, {grade:"E", min:40, max:44}, {grade:"F", min:0, max:39}
+  ];
+  const tot = parseFloat(t) || 0;
+  const match = scale.find(b => tot >= (parseFloat(b.min)||0) && tot <= (parseFloat(b.max)||100));
+  if(match) return match.grade;
+  // fall back to the lowest band if nothing matches (e.g. a gap in the scale)
+  return scale[scale.length-1] ? scale[scale.length-1].grade : "F";
+}
+
+// The remark that goes with a grade band, e.g. Excellent, Good, Credit —
+// shown on the report card next to each subject's grade, same as the admin app.
+function getGradeRemark(t){
+  const scale = (schoolData && schoolData.gradingScale && schoolData.gradingScale.length) ? schoolData.gradingScale : [
+    {grade:"A", min:70, max:100, remark:"Excellent"}, {grade:"B", min:60, max:69, remark:"Very Good"},
+    {grade:"C", min:50, max:59, remark:"Good"}, {grade:"D", min:45, max:49, remark:"Credit"},
+    {grade:"E", min:40, max:44, remark:"Pass"}, {grade:"F", min:0, max:39, remark:"Fail"}
+  ];
+  const tot = parseFloat(t) || 0;
+  const sorted = [...scale].sort((a,b)=>b.min-a.min);
+  const band = sorted.find(g=>tot>=g.min) || sorted[sorted.length-1] || null;
+  return band ? band.remark : "";
+}
+
+const TERM_ORDER = ["1st Term", "2nd Term", "3rd Term"];
+
+// Same-session percentage for one term, used to build the cumulative
+// average below — mirrors the admin app's studentPercentageForTerm().
+function studentPercentageForTerm(studentId, term, session){
+  const s = schoolData.students.find(x=>x.id===studentId);
+  if(!s) return null;
+  const subs = getSubjectsForClass(s, schoolData.classSubjects);
+  const scs = schoolData.scores.filter(sc => sc.studentId===studentId && sameTermSession(sc, term, session, DEFAULT_SESSION) && subs.includes(sc.subject));
+  if(!scs.length) return null;
+  const total = scs.reduce((a,b)=>a+(parseFloat(b.total)||0),0);
+  return (total/(scs.length*100))*100;
+}
+
+// Session-to-date average as of `term`, matching the admin app's
+// cumulativeAverageForTerm(). Returns null if the setting is off, the term
+// is 1st Term (nothing to accumulate yet), or no term has scores yet.
+function cumulativeAverageForTerm(studentId, term, session){
+  if(!schoolData.cumulativeAverageEnabled) return null;
+  const idx = TERM_ORDER.indexOf(term);
+  if(idx <= 0) return null;
+  const termsSoFar = TERM_ORDER.slice(0, idx+1);
+  const pcts = termsSoFar.map(t => studentPercentageForTerm(studentId, t, session)).filter(p => p !== null);
+  if(!pcts.length) return null;
+  return { value: pcts.reduce((a,b)=>a+b,0)/pcts.length, termsIncluded: termsSoFar.filter(t=>studentPercentageForTerm(studentId,t,session)!==null) };
+}
+
+// Same tolerant CA reader the admin app uses: reads the new configurable
+// {ca:[...]} array when present, and falls back to the legacy ca1/ca2/ca3
+// fields for older score records so nothing already entered is lost.
+function caArrayFromScore(sc){
+  if(!sc) return [];
+  if(Array.isArray(sc.ca)) return sc.ca;
+  const legacy = [sc.ca1, sc.ca2, sc.ca3].filter(v => v!==undefined && v!==null && v!=="");
+  return legacy;
+}
+function caTotalFromScore(sc){
+  return caArrayFromScore(sc).reduce((a,b)=>a+(parseFloat(b)||0),0);
+}
+function assessmentCaTotal(){
+  const cas = (schoolData.assessmentConfig && schoolData.assessmentConfig.cas) || [];
+  return cas.reduce((a,c)=>a+(parseFloat(c.max)||0),0);
+}
+function assessmentExamMax(){ return (schoolData.assessmentConfig && schoolData.assessmentConfig.examMax) || 0; }
+function assessmentExamLabel(){ return (schoolData.assessmentConfig && schoolData.assessmentConfig.examLabel) || "Exam"; }
+
+// Same attendance rules as the admin app, kept in sync so "No. of Times School
+// Opened" / "No. of Times Present" on the printed result match the admin copy.
+// Records saved before term/session tagging existed are a flat
+// {studentId:status} map with no term/session — treat those as belonging to
+// whatever term/session is currently active, same as attendanceDayRecord() in
+// the admin app.
+function attendanceDayRecord(date){
+  const rec = schoolData.attendance[date];
+  if(!rec) return null;
+  if(rec.marks) return rec;
+  return { term: schoolData.currentTerm, session: schoolData.currentSession, marks: rec };
+}
+function attendanceStatsFor(className, stream, term, session){
+  const classStudents = schoolData.students.filter(s => s.className===className && (!classUsesStreams(className) || !stream || s.stream===stream));
+  const ids = new Set(classStudents.map(s=>s.id));
+  let daysOpened = 0;
+  const presentCount = {};
+  classStudents.forEach(s=> presentCount[s.id] = 0);
+  Object.keys(schoolData.attendance).forEach(date=>{
+    const rec = attendanceDayRecord(date);
+    if(!rec || rec.term !== term || (rec.session || DEFAULT_SESSION) !== session) return;
+    const markedForClass = Object.keys(rec.marks).some(id => ids.has(id));
+    if(!markedForClass) return;
+    daysOpened++;
+    classStudents.forEach(s=>{
+      const st = rec.marks[s.id];
+      if(st === "Present" || st === "Late") presentCount[s.id]++;
+    });
+  });
+  return { daysOpened, presentCount };
+}
+function ordinal(n){
+  const s = ["th","st","nd","rd"], v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
+}
+const subjectStructure={
+  Primary:["Mathematics","English Studies","Basic Science and Technology","National Values Education","Cultural and Creative Arts","Quantitative Reasoning","Verbal Reasoning","Christian Religious Studies","Handwriting","Physical and Health Education","Computer Studies"],
+  JSS:["Mathematics","English","Basic Science","Digital Tech","CCA","National Value","CRS","History","Business Studies","PHE","Prevocational Studies"],
+  SSS:["Mathematics","English","Civic Education","Further Math","Computer"],
+  SSS_Science:["Physics","Chemistry","Biology","Agricultural Science"],
+  SSS_Art:["Literature in English","Government","History","CRK","IRK","Fine Art"],
+  SSS_Commercial:["Government","Economics","Commerce","Financial Accounting","Office Practice"]
+};
+function classSubjectKey(cls, stream){
+  if(classUsesStreams(cls) && stream) return `${cls}|${stream}`;
+  if(/^JSS[123]/.test(cls)) return cls.slice(0,4);
+  return cls;
+}
+function getSubjectsForClassStream(cls, stream, classSubjects){
+  const key = classSubjectKey(cls, stream);
+  if(classSubjects[key] && classSubjects[key].length) return classSubjects[key];
+  let defaults;
+  if(!classUsesStreams(cls)){
+    defaults = cls.startsWith("JSS") ? subjectStructure.JSS
+      : (cls.startsWith("Primary") || cls.startsWith("Nursery")) ? subjectStructure.Primary
+      : subjectStructure.SSS;
+  } else if(stream === "Science"){ defaults = [...subjectStructure.SSS, ...subjectStructure.SSS_Science]; }
+  else if(stream === "Art"){ defaults = [...subjectStructure.SSS, ...subjectStructure.SSS_Art]; }
+  else if(stream === "Commercial"){ defaults = [...subjectStructure.SSS, ...subjectStructure.SSS_Commercial]; }
+  else { defaults = subjectStructure.SSS; }
+  return defaults;
+}
+function sameTermSession(rec, term, session, defaultSession){
+  return rec.term === term && (rec.session || defaultSession) === session;
+}
+function getSubjectsForClass(stu, classSubjects){
+  return getSubjectsForClassStream(stu.className, stu.stream, classSubjects);
+}
+function formatOrdinalDate(dateStr){
+  if(!dateStr) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if(!m) return dateStr;
+  const [, y, mo, d] = m;
+  const day = parseInt(d, 10);
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const monthName = months[parseInt(mo, 10) - 1];
+  if(!monthName) return dateStr;
+  const suffix = (day % 10 === 1 && day !== 11) ? "st"
+               : (day % 10 === 2 && day !== 12) ? "nd"
+               : (day % 10 === 3 && day !== 13) ? "rd" : "th";
+  return `${day}${suffix} ${monthName}, ${y}`;
+}
+
+const affectiveSkills=["Behavioral Traits","Punctuality","Regularity","Neatness","Maturity","Studies","Politeness","Friendliness","Cooperation","Co-Operation","Rate of Work","Leadership","Creativity"];
+const psychomotorSkills=["Handwriting","Games","Arts & Crafts","Home Skills","Verbal Fluency","Attentiveness"];
+const remarkBank = {
+  excellent: [
+    "An outstanding performance this term. Keep up the excellent work and continue to aim high.",
+    "Brilliant result! Consistent hard work is clearly paying off — well done.",
+    "Excellent academic performance. Keep this remarkable standard up next term."
+  ],
+  good: [
+    "A very good performance this term. With a little more consistency, even better results are within reach.",
+    "Good result overall. Keep working hard and pushing for excellence.",
+    "Commendable effort this term — continue building on this solid foundation."
+  ],
+  average: [
+    "A fair performance this term. More consistent study and attention to weaker subjects will improve results.",
+    "Satisfactory result. There is good potential here — increased effort will bring real improvement.",
+    "An average outcome this term. With more focus and regular practice, much better is possible."
+  ],
+  needsImprovement: [
+    "There is clear room for improvement. With more effort, focus, and support, much better results are achievable next term.",
+    "This term's result calls for more attention to studies. The potential is there — consistent effort will show in the results.",
+    "More commitment to studies is encouraged. With determination and support, improvement is very achievable."
+  ],
+  weak: [
+    "This term's result is below expectation, but with renewed effort and support, significant improvement is possible. Do not be discouraged.",
+    "There is a need for serious improvement, and the ability to do so is there. Extra effort and guidance next term will help a lot.",
+    "A challenging term, but every effort to improve will count. Stay encouraged and keep trying."
+  ]
+};
+function pickVariant(arr, seedStr){
+  let hash = 0;
+  for(let i=0;i<seedStr.length;i++){ hash = (hash*31 + seedStr.charCodeAt(i)) % 100000; }
+  return arr[hash % arr.length];
+}
+// Maps a computed grade letter to a band. Uses the school's own grading
+// scale (via getGrade) so the auto-filled skills/remarks track whatever
+// cutoffs the school has actually configured, instead of a fixed 70/60/50/45
+// percentage split that could disagree with the official report card.
+function bandForPercentage(percentage){
+  const grade = getGrade(percentage);
+  const order = ["A","B","C","D","E","F"];
+  const idx = order.indexOf(grade);
+  if(idx === 0) return "excellent";
+  if(idx === 1) return "good";
+  if(idx === 2) return "average";
+  if(idx === 3) return "needsImprovement";
+  return "weak"; // E, F, or any grade outside A–D
+}
+function autoSkillRating(percentage, seedStr){
+  const bands = { excellent:[5,4,5], good:[4,4,5], average:[3,4,3], needsImprovement:[3,3,2], weak:[2,3,2] };
+  return pickVariant(bands[bandForPercentage(percentage)], seedStr);
+}
+function autoRemark(percentage, seedStr){
+  return pickVariant(remarkBank[bandForPercentage(percentage)], seedStr);
+}
+
+function hexToRgb(hex){
+  let h = (hex || "#1565C0").replace("#","").trim();
+  if(h.length===3) h = h.split("").map(c=>c+c).join("");
+  if(!/^[0-9a-fA-F]{6}$/.test(h)) h = "1565C0";
+  const num = parseInt(h,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+function tintColor(hex, amount){
+  const {r,g,b} = hexToRgb(hex);
+  const mix = c => Math.round(c + (255-c)*amount);
+  return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+}
+function watermarkTone(hex, alpha){
+  const {r,g,b} = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function getReportCardCss(color){
+  const C  = /^#[0-9a-fA-F]{3,6}$/.test(color||"") ? color : "#1565C0";
+  const T1 = tintColor(C, 0.80);
+  const T2 = tintColor(C, 0.92);
+  const T3 = tintColor(C, 0.94);
+  const T4 = tintColor(C, 0.93);
+  const WM = watermarkTone(C, 0.09);
+  return `
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;background:#ccc;padding:20px;font-size:11px;}
+.np{text-align:center;margin-bottom:14px;}
+.np button{background:${C};color:#fff;border:none;padding:9px 28px;font-size:13px;border-radius:4px;cursor:pointer;}
+.page{width:210mm;min-height:297mm;background:#fff;margin:0 auto 16px;padding:10px 14px 14px;border:2.5px solid ${C};position:relative;overflow:hidden;}
+.header{display:flex;align-items:center;gap:10px;border-bottom:2px solid ${C};padding-bottom:7px;margin-bottom:6px;}
+.logo{width:72px;height:72px;border-radius:50%;border:2.5px solid ${C};flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${T2};overflow:hidden;}
+.logo svg{width:66px;height:66px;}
+.ht{flex:1;text-align:center;}
+.ht h1{font-size:23px;font-weight:900;color:${C};letter-spacing:1px;line-height:1.1;}
+.ht h2{font-size:11px;color:${C};font-weight:600;}
+.ht .vis{font-size:10px;color:${C};font-style:italic;margin:1px 0 3px;}
+.banner{display:inline-block;background:${C};color:#fff;font-size:13px;font-weight:900;letter-spacing:2px;padding:2px 20px;margin-bottom:2px;}
+.rt{font-size:12px;font-weight:700;color:${C};letter-spacing:1px;}
+.ib{border:1.5px solid ${C};padding:5px 8px 4px;margin-bottom:6px;position:relative;}
+.passport-box{position:absolute;top:4px;right:6px;width:58px;height:70px;border:1.5px solid ${C};background:${T2};display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:6.5px;color:${C};text-align:center;line-height:1.2;}
+.passport-box img{width:100%;height:100%;object-fit:cover;}
+.watermark{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0;overflow:hidden;}
+.watermark span{font-size:54px;font-weight:900;color:${WM};letter-spacing:2px;text-align:center;transform:rotate(-32deg);white-space:nowrap;text-transform:uppercase;}
+.page > *:not(.watermark){position:relative;z-index:1;}
+.ir{display:flex;gap:6px;align-items:flex-end;margin-bottom:3px;flex-wrap:wrap;}
+.ir label{font-weight:700;color:${C};font-size:10px;white-space:nowrap;}
+.ul{border-bottom:1px solid #333;display:inline-block;height:15px;flex:1;}
+.bg{display:grid;grid-template-columns:1fr 148px;gap:5px;margin-bottom:5px;}
+.cw{border:1.5px solid ${C};}
+.sh{background:${C};color:#fff;text-align:center;font-weight:700;font-size:10px;padding:2px 0;}
+.mh{background:${T1};text-align:center;font-size:9px;font-weight:700;color:${C};border-bottom:1px solid ${C};padding:1px 0;}
+.acad-label{writing-mode:vertical-rl;transform:rotate(180deg);background:${T1};color:${C};font-weight:900;font-size:9px;letter-spacing:1px;text-align:center;border-right:1px solid ${C};padding:4px 2px;white-space:nowrap;}
+table.ct{width:100%;border-collapse:collapse;font-size:9px;}
+table.ct th{background:${T1};border:1px solid ${C};text-align:center;vertical-align:bottom;padding:1px 1px 2px;font-size:7.5px;font-weight:700;color:${C};}
+table.ct th.sname{text-align:left;padding-left:4px;font-size:9px;min-width:98px;}
+.rot{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;display:inline-block;line-height:1.1;}
+table.ct td{border:1px solid ${C};text-align:center;height:13.5px;padding:0 1px;font-size:9px;}
+table.ct td.sname{text-align:left;padding-left:4px;font-size:9px;}
+table.ct tr:nth-child(even) td{background:${T3};}
+.aw{border:1.5px solid ${C};display:flex;flex-direction:column;}
+table.at{width:100%;border-collapse:collapse;font-size:9px;}
+table.at th{background:${T1};border:1px solid ${C};padding:2px 3px;font-size:8.5px;font-weight:700;color:${C};}
+table.at td{border:1px solid ${C};padding:1px 4px;height:13.5px;font-size:9px;}
+table.at td.rc{text-align:center;width:32px;}
+table.at tr:nth-child(even) td{background:${T3};}
+.keys{border:1.5px solid ${C};margin-top:5px;padding:5px 7px;background:${T4};}
+.keys .kt{font-weight:900;text-align:center;font-size:9.5px;color:${C};text-decoration:underline;margin-bottom:3px;}
+.keys div{font-size:9px;line-height:1.7;}
+.tots{display:flex;align-items:flex-end;gap:10px;padding:4px 0 3px;border-top:1.5px solid ${C};margin-top:3px;}
+.tots label{font-weight:700;color:${C};font-size:10px;}
+.rem{margin-top:4px;}
+.rl{display:flex;align-items:flex-end;gap:6px;margin-bottom:5px;}
+.rl label{font-weight:700;color:${C};font-size:10px;white-space:nowrap;}
+.rl .ul{flex:1;}
+.rx{border-bottom:1px solid #333;height:15px;width:100%;margin-bottom:5px;}
+.sig-slot{position:relative;overflow:visible;}
+.sig-img{position:absolute;left:4px;bottom:1px;max-height:22px;max-width:calc(100% - 6px);width:auto;height:auto;object-fit:contain;pointer-events:none;}
+.stamp-img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;}
+.sr{display:flex;align-items:flex-end;gap:14px;margin-top:4px;}
+.sr label{font-weight:700;color:${C};font-size:10px;white-space:nowrap;}
+.stamp{width:72px;height:52px;display:flex;align-items:center;justify-content:center;font-size:7.5px;color:#aaa;margin-left:auto;flex-shrink:0;}
+@media print{
+  body{background:#fff;padding:0;}
+  .np{display:none;}
+  .page{border:none;margin:0;padding:8px 12px;width:100%;}
+  .pcwrap{page-break-after:always;}
+  .pcwrap:last-child{page-break-after:auto;}
+  @page{size:A4 portrait;margin:6mm;}
+}
+`;
+}
+
+// Builds the exact same "official" result sheet HTML the admin app's own
+// Generate PDF button produces — same markup, same CSS classes, same
+// auto-filled skills/remarks logic — just driven by the data this portal
+// already pulled from Firestore instead of the admin app's local variables.
+function buildReportCardPage(stu, term, session){
+  const isJunior = stu.className.startsWith("JSS");
+  const isSenior = stu.className.startsWith("SSS");
+  const subs = getSubjectsForClass(stu, schoolData.classSubjects);
+  const rem = schoolData.remarks.find(r => r.studentId===stu.id && sameTermSession(r, term, session, DEFAULT_SESSION)) || {};
+  const fmSign = rem.formMasterName || schoolData.formMasters[stu.className] || "";
+  const fmSigImg = schoolData.teacherSignatures[stu.className] || "";
+
+  const classStudents = schoolData.students.filter(s => s.className===stu.className && (!classUsesStreams(stu.className) || s.stream===stu.stream));
+  const classRanked = classStudents.map(s => {
+    const sSubs = getSubjectsForClass(s, schoolData.classSubjects);
+    const sScores = schoolData.scores.filter(sc => sc.studentId===s.id && sameTermSession(sc, term, session, DEFAULT_SESSION) && sSubs.includes(sc.subject));
+    const total = sScores.reduce((a,b)=>a+(parseFloat(b.total)||0),0);
+    const count = sScores.length;
+    return { id: s.id, total, avg: count>0 ? total/count : 0 };
+  }).sort((a,b)=> isSenior ? (b.avg-a.avg || b.total-a.total) : (b.total-a.total)); // ties on average are broken by whoever scored the higher raw total
+  const studentTotal = (classRanked.find(s=>s.id===stu.id)||{total:0}).total;
+  const subjectCount = schoolData.scores.filter(sc=>sc.studentId===stu.id && sameTermSession(sc, term, session, DEFAULT_SESSION) && subs.includes(sc.subject)).length;
+  const percentageNum = subjectCount > 0 ? (studentTotal/(subjectCount*100))*100 : 0;
+  const percentage = percentageNum.toFixed(1);
+  const cumAvg = cumulativeAverageForTerm(stu.id, term, session);
+  const attRaw = attendanceStatsFor(stu.className, stu.stream, term, session);
+  const attStats = { daysOpened: attRaw.daysOpened, timesPresent: attRaw.daysOpened ? (attRaw.presentCount[stu.id]||0) : "" };
+
+  const fmRemark  = rem.formMasterRemark && rem.formMasterRemark.trim()
+    ? rem.formMasterRemark
+    : autoRemark(percentageNum, stu.id + term + "fm");
+  const princRem  = rem.principalRemark && rem.principalRemark.trim()
+    ? rem.principalRemark
+    : autoRemark(percentageNum, stu.id + term + "principal");
+
+  function getHighestInClass(sub){
+    const stuIds = classStudents.map(s=>s.id);
+    const scs = schoolData.scores.filter(s=>stuIds.includes(s.studentId)&&s.subject===sub&&sameTermSession(s, term, session, DEFAULT_SESSION));
+    return scs.length?Math.max(...scs.map(s=>s.total)):0;
+  }
+  function getLowestInClass(sub){
+    const stuIds = classStudents.map(s=>s.id);
+    const scs = schoolData.scores.filter(s=>stuIds.includes(s.studentId)&&s.subject===sub&&sameTermSession(s, term, session, DEFAULT_SESSION));
+    return scs.length?Math.min(...scs.map(s=>s.total)):0;
+  }
+  function getSubjectPosition(sub){
+    const ranked = classStudents.map(s => {
+      const sc = schoolData.scores.find(x => x.studentId===s.id && x.subject===sub && sameTermSession(x, term, session, DEFAULT_SESSION));
+      return { id: s.id, total: sc ? (parseFloat(sc.total)||0) : null };
+    }).filter(r => r.total !== null).sort((a,b) => b.total - a.total);
+    const idx = ranked.findIndex(r => r.id === stu.id);
+    if(idx === -1) return "";
+    const myTotal = ranked[idx].total;
+    const ahead = ranked.filter(r => r.total > myTotal).length;
+    return ordinal(ahead + 1);
+  }
+
+  const allSkillNames = [...affectiveSkills, ...psychomotorSkills];
+  function skillRating(name){
+    const sk = schoolData.skills.find(sk=>sk.studentId===stu.id && sk.name===name && sameTermSession(sk, term, session, DEFAULT_SESSION));
+    if(sk && sk.rating) return sk.rating;
+    return autoSkillRating(percentageNum, stu.id + term + name);
+  }
+
+  function subjectRows(){
+    return subs.map(sub => {
+      const sc = schoolData.scores.find(s=>s.studentId===stu.id && s.subject===sub && sameTermSession(s, term, session, DEFAULT_SESSION));
+      const ca   = sc ? caTotalFromScore(sc) : "";
+      const exam = sc && sc.exam !== undefined ? sc.exam : "";
+      const tot  = sc && sc.total !== undefined ? sc.total : "";
+      const hic  = tot!==""? getHighestInClass(sub) : "";
+      const lic  = tot!==""? getLowestInClass(sub)  : "";
+      const pos  = tot!==""? getSubjectPosition(sub) : "";
+      const grade= tot!==""? getGrade(parseFloat(tot)) : "";
+      const remarkText = tot!=="" ? getGradeRemark(parseFloat(tot)) : "";
+      return `<tr>
+        <td class="sname">${sub}</td>
+        <td>${ca}</td><td>${exam}</td><td>${tot}</td>
+        <td>${hic}</td><td>${lic}</td><td>${pos}</td>
+        <td>${grade}</td><td style="font-size:7.5px;">${remarkText}</td><td></td>
+      </tr>`;
+    }).join("") + `<tr><td class="sname">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td class="sname">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  }
+
+  function skillRows(){
+    return allSkillNames.map(n=>`<tr><td>${n}</td><td class="rc">${skillRating(n)}</td></tr>`).join("");
+  }
+
+  const academicsLabel = isSenior ? `<div class="acad-label">ACADEMICS</div>` : "";
+  const bannerText     = stu.className.startsWith("Primary") ? "PRIMARY CLASS"
+    : stu.className.startsWith("Nursery") ? "NURSERY CLASS"
+    : isJunior ? "JUNIOR CLASS"
+    : ("SENIOR CLASS" + (stu.stream ? " — " + stu.stream.toUpperCase() : ""));
+
+  return `<div class="page">
+  ${schoolData.reportWatermarkEnabled ? `<div class="watermark"><span>${schoolData.schoolName||""}</span></div>` : ""}
+  <div class="header">
+    <div class="logo">${schoolData.schoolLogo ? `<img src="${schoolData.schoolLogo}" style="width:70px;height:70px;object-fit:contain;border-radius:50%;">` : `<div style="width:70px;height:70px;border-radius:50%;background:#eef4ff;display:flex;align-items:center;justify-content:center;font-size:9px;color:#1565C0;text-align:center;padding:6px;">SCHOOL LOGO</div>`}</div>
+    <div class="ht">
+      <h1>${(schoolData.schoolName||"").toUpperCase()}</h1>
+      <h2>${schoolData.schoolInfo||""}</h2>
+      ${schoolData.schoolVision ? `<div class="vis">${schoolData.schoolVision}</div>` : ""}
+      <div class="banner">${bannerText}</div><br>
+      <span class="rt">TERMINAL REPORT SHEET</span>
+    </div>
+  </div>
+  <div class="ib" style="padding-right:76px;">
+    <div class="passport-box">${stu.photo ? `<img src="${stu.photo}" alt="Passport photo">` : "PASSPORT<br>PHOTO"}</div>
+    <div class="ir">
+      <label>Name</label><div class="ul" style="min-width:160px;">${stu.name}</div>
+      <label>Adm. No.</label><div class="ul" style="min-width:70px;"></div>
+    </div>
+    <div class="ir">
+      <label>Class</label><div class="ul" style="min-width:70px;">${stu.className}</div>
+      <label>House</label><div class="ul" style="min-width:70px;"></div>
+      <label>Sex</label><div class="ul" style="min-width:36px;">${stu.sex||""}</div>
+    </div>
+    <div class="ir">
+      <label>No. in Class</label><div class="ul" style="min-width:40px;">${classStudents.length}</div>
+      <label>Term</label><div class="ul" style="min-width:70px;">${term}</div>
+      <label>Year</label><div class="ul" style="min-width:70px;">${session}</div>
+    </div>
+    <div class="ir">
+      <label>No. of Times School Opened</label><div class="ul" style="min-width:36px;">${attStats.daysOpened || ""}</div>
+      <label>No. of Times Present</label><div class="ul" style="min-width:36px;">${attStats.timesPresent}</div>
+    </div>
+    <div class="ir">
+      <label>Next Term Begins on</label><div class="ul" style="min-width:150px;">${formatOrdinalDate(schoolData.resumptionDate)}</div>
+    </div>
+  </div>
+  <div class="bg">
+    <div class="cw">
+      <div class="sh">Cognitive Domain</div>
+      <div class="mh">Marks</div>
+      <div style="display:flex;">
+        ${academicsLabel}
+        <table class="ct" style="flex:1;">
+          <thead>
+            <tr>
+              <th class="sname" rowspan="2">SUBJECTS</th>
+              <th style="width:26px;"><span class="rot">CA ${assessmentCaTotal()}</span></th>
+              <th style="width:26px;"><span class="rot">${assessmentExamLabel().toUpperCase()} ${assessmentExamMax()}</span></th>
+              <th style="width:28px;"><span class="rot">TOTAL ${assessmentCaTotal()+assessmentExamMax()}</span></th>
+              <th style="width:28px;"><span class="rot">HIGHEST IN CLASS</span></th>
+              <th style="width:28px;"><span class="rot">LOWEST IN CLASS</span></th>
+              <th style="width:26px;"><span class="rot">POSITION</span></th>
+              <th style="width:24px;"><span class="rot">GRADE</span></th>
+              <th style="width:34px;"><span class="rot">REMARK</span></th>
+              <th style="width:38px;font-size:7px;line-height:1.2;vertical-align:middle;">CLASS<br>TEACHER'S<br>SIGN</th>
+            </tr>
+          </thead>
+          <tbody>${subjectRows()}</tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;">
+      <div class="aw" style="flex:1;">
+        <div class="sh" style="font-size:8px;">Affective and Psychomotor Domain</div>
+        <table class="at">
+          <thead><tr><th style="text-align:left;">Skills</th><th class="rc">Rate<br>1–5</th></tr></thead>
+          <tbody>${skillRows()}</tbody>
+        </table>
+      </div>
+      <div class="keys">
+        <div class="kt">KEYS FOR RATING</div>
+        <div><b>5</b> = Excellent</div>
+        <div><b>4</b> = Very Good</div>
+        <div><b>3</b> = Good</div>
+        <div><b>2</b> = Fair</div>
+        <div><b>1</b> = Poor</div>
+      </div>
+      <div class="keys" style="margin-top:5px;">
+        <div class="kt">GRADING KEY</div>
+        ${[...(schoolData.gradingScale||[])].sort((a,b)=>b.min-a.min).map(g=>`<div><b>${g.grade}</b> = ${g.remark} (${g.min}-${g.max})</div>`).join("")}
+      </div>
+    </div>
+  </div>
+  <div class="tots">
+    <label>TOTAL MARKS SCORED</label>
+    <div class="ul" style="min-width:110px;">${studentTotal}</div>
+    <label style="margin-left:auto;">PERCENTAGE</label>
+    <div class="ul" style="min-width:90px;">${percentage}%</div>
+    ${cumAvg ? `<label style="margin-left:14px;">CUMULATIVE AVG (${cumAvg.termsIncluded.map(t=>t.replace(" Term","").toUpperCase()).join(" &amp; ")})</label>
+    <div class="ul" style="min-width:90px;">${cumAvg.value.toFixed(1)}%</div>` : ""}
+  </div>
+  <div class="rem">
+    <div class="rl">
+      <label>FORM MASTER'S REMARKS</label>
+      <div class="ul">${fmRemark}</div>
+    </div>
+    <div class="rl" style="margin-top:18px;">
+      <label>CLASS TEACHER'S SIGNATURE</label>
+      <div class="ul sig-slot">${fmSigImg ? `<img src="${fmSigImg}" class="sig-img" alt="Class teacher's signature">` : fmSign}</div>
+    </div>
+    <div class="rx"></div>
+    <div class="rl" style="margin-top:4px;">
+      <label>PRINCIPAL'S REMARKS</label>
+      <div class="ul">${princRem}</div>
+    </div>
+    <div class="rx"></div>
+    <div class="sr" style="margin-top:18px;">
+      <label>SIGNATURE &amp; STAMP</label>
+      <div class="ul sig-slot" style="min-width:130px;">${schoolData.principalSignature ? `<img src="${schoolData.principalSignature}" class="sig-img" alt="Principal's signature">` : ""}${schoolData.schoolStamp ? `<img src="${schoolData.schoolStamp}" class="stamp-img" alt="School stamp">` : ""}</div>
+    </div>
+  </div>
+</div>`;
+}
+
+let schoolData = { students:[], scores:[], skills:[], remarks:[], classSubjects:{},
+  schoolName:"", schoolInfo:"", schoolVision:"", schoolLogo:null, schoolStamp:null,
+  principalSignature:null, reportCardColor:"#1565C0", principalName:"", teacherSignatures:{}, formMasters:{}, resumptionDate:"",
+  fees:{}, feeStructure:{}, attendance:{}, announcements:[], resultsPublished:{}, reportWatermarkEnabled:false, cumulativeAverageEnabled:false,
+  assessmentConfig:{ cas:[{label:"CA1",max:10},{label:"CA2",max:10},{label:"CA3",max:20}], examLabel:"Exam", examMax:60 },
+  gradingScale:[
+    {grade:"A", min:70, max:100, remark:"Excellent"},
+    {grade:"B", min:60, max:69,  remark:"Very Good"},
+    {grade:"C", min:50, max:59,  remark:"Good"},
+    {grade:"D", min:45, max:49,  remark:"Credit"},
+    {grade:"E", min:40, max:44,  remark:"Pass"},
+    {grade:"F", min:0,  max:39,  remark:"Fail"}
+  ] };
+function normalizeAsset(v){
+  return (v && v !== "null" && v !== "undefined") ? v : null;
+}
+let currentStudent = null;
+let portalCode = "";
+const DEFAULT_SESSION = "2025/2026";
+
+function showLoginError(msg){
+  const el = document.getElementById("loginError");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+function clearLoginError(){
+  document.getElementById("loginError").style.display = "none";
+}
+
+// ===== Password hashing (PBKDF2-SHA256 via the browser's built-in Web
+// Crypto API — no external library needed). A random salt is generated per
+// account and stored alongside the hash; the salt isn't secret, only the
+// original password is. Same function is duplicated identically in the
+// Admin portal and Teacher Portal since these are standalone files.
+async function hashSecret(secret, existingSaltHex){
+  const enc = new TextEncoder();
+  const salt = existingSaltHex
+    ? new Uint8Array(existingSaltHex.match(/.{2}/g).map(b => parseInt(b, 16)))
+    : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(String(secret)), {name:"PBKDF2"}, false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({name:"PBKDF2", salt, iterations:210000, hash:"SHA-256"}, keyMaterial, 256);
+  const toHex = arr => Array.from(new Uint8Array(arr)).map(b => b.toString(16).padStart(2,"0")).join("");
+  return { hash: toHex(bits), salt: toHex(salt) };
+}
+async function verifySecret(secret, saltHex, expectedHash){
+  const { hash } = await hashSecret(secret, saltHex);
+  return hash === expectedHash;
+}
+
+async function doLogin(){
+  clearLoginError();
+  const code = document.getElementById("loginCode").value.trim().toUpperCase();
+  const id = document.getElementById("loginId").value.trim();
+  const password = document.getElementById("loginPin").value.trim();
+  if(!code || !id || !password){ showLoginError("Please fill in all three fields."); return; }
+
+  const btn = document.getElementById("loginBtn");
+  btn.disabled = true; btn.textContent = "Checking…";
+
+  try{
+    initFirebase();
+    await firebase.auth().signInAnonymously();
+
+    const schoolRef = fbDb.collection("schools").doc(code).collection("data");
+    const [coreSnap, settingsSnap, brandingSnap, subjectsSnap, teacherSigSnap, feesSnap, announceSnap, attendanceSnap] = await Promise.all([
+      schoolRef.doc("core").get(),
+      schoolRef.doc("settings").get(),
+      schoolRef.doc("branding").get(),
+      schoolRef.doc("subjects").get(),
+      schoolRef.doc("teacherSignatures").get(),
+      schoolRef.doc("fees").get(),
+      schoolRef.doc("announcements").get(),
+      schoolRef.doc("attendance").get()
+    ]);
+
+    if(!coreSnap.exists){
+      showLoginError("School Portal Code not found. Check the code with your school — and make sure they have Multi-Device Sync switched on.");
+      btn.disabled = false; btn.textContent = "Log In";
+      return;
+    }
+
+    const core = coreSnap.data() || {};
+    const settings = settingsSnap.exists ? settingsSnap.data() : {};
+    const branding = brandingSnap.exists ? brandingSnap.data() : {};
+    const subjectsDoc = subjectsSnap.exists ? subjectsSnap.data() : {};
+    const teacherSigs = teacherSigSnap.exists ? teacherSigSnap.data() : {};
+    const feesDoc = feesSnap.exists ? feesSnap.data() : {};
+    const announceDoc = announceSnap.exists ? announceSnap.data() : {};
+    const attendanceDoc = attendanceSnap.exists ? attendanceSnap.data() : {};
+
+    const student = (core.students || []).find(s => s.id === id);
+    if(!student){
+      showLoginError("Student ID not found for this school.");
+      btn.disabled = false; btn.textContent = "Log In";
+      return;
+    }
+
+    const schoolTerm = settings.currentTerm || "";
+    const schoolSession = settings.currentSession || "";
+    const accessCurrent = student.accessTerm === schoolTerm && student.accessSession === schoolSession;
+    const hasCredential = !!(student.passwordHash || student.password);
+
+    if(!hasCredential || !accessCurrent){
+      showLoginError("No active password for this term. Pay the school fee in full and your school will print an invoice with your RRR (portal password). Already paid? Ask the school office to reissue your access.");
+      btn.disabled = false; btn.textContent = "Log In";
+      return;
+    }
+    if(student.passwordHash && student.passwordSalt){
+      const ok = await verifySecret(password, student.passwordSalt, student.passwordHash);
+      if(!ok){
+        showLoginError("Incorrect password.");
+        btn.disabled = false; btn.textContent = "Log In";
+        return;
+      }
+    } else {
+      // Legacy plaintext account (created before hashing was added).
+      // Verify against the old field, then transparently upgrade it to a
+      // salted hash so the plaintext password never lingers in the database
+      // past this login.
+      if(String(student.password) !== password){
+        showLoginError("Incorrect password.");
+        btn.disabled = false; btn.textContent = "Log In";
+        return;
+      }
+      const { hash, salt } = await hashSecret(password);
+      student.passwordHash = hash;
+      student.passwordSalt = salt;
+      delete student.password;
+      try{
+        await schoolRef.doc("core").set({ students: core.students }, {merge:true});
+      }catch(migrateErr){
+        console.error("Password migration write failed (non-fatal):", migrateErr);
+      }
+    }
+
+    // Success
+    portalCode = code;
+    schoolData = {
+      students: core.students || [],
+      scores: core.scores || [],
+      skills: core.skills || [],
+      remarks: core.remarks || [],
+      classSubjects: subjectsDoc.classSubjects || {},
+      schoolName: settings.schoolName || "School",
+      schoolInfo: settings.schoolInfo || "",
+      schoolVision: settings.schoolVision || "",
+      principalName: settings.principalName || "",
+      formMasters: settings.formMasters || {},
+      resumptionDate: settings.resumptionDate || "",
+      schoolLogo: normalizeAsset(branding.schoolLogo),
+      schoolStamp: normalizeAsset(branding.schoolStamp),
+      principalSignature: normalizeAsset(branding.principalSignature),
+      reportCardColor: (branding.reportCardColor && /^#[0-9a-fA-F]{3,6}$/.test(branding.reportCardColor)) ? branding.reportCardColor : "#1565C0",
+      teacherSignatures: teacherSigs.teacherSignatures || {},
+      fees: feesDoc.fees || {},
+      feeStructure: feesDoc.feeStructure || {},
+      discounts: feesDoc.discounts || {},
+      attendance: attendanceDoc.attendance || {},
+      announcements: announceDoc.announcements || [],
+      resultsPublished: settings.resultsPublished || {},
+      reportWatermarkEnabled: !!settings.reportWatermarkEnabled,
+      cumulativeAverageEnabled: !!settings.cumulativeAverageEnabled,
+      assessmentConfig: settings.assessmentConfig || schoolData.assessmentConfig,
+      gradingScale: settings.gradingScale || schoolData.gradingScale,
+      currentTerm: schoolTerm,
+      currentSession: schoolSession
+    };
+    currentStudent = student;
+    localStorage.setItem("portalSession", JSON.stringify({code, id, password}));
+    enterApp();
+  }catch(err){
+    console.error(err);
+    showLoginError("Couldn't connect. Check your internet connection and try again.");
+    btn.disabled = false; btn.textContent = "Log In";
+  }
+}
+
+function doLogout(){
+  localStorage.removeItem("portalSession");
+  location.reload();
+}
+
+function openChangePasswordModal(){
+  document.getElementById("cpCurrent").value = "";
+  document.getElementById("cpNew").value = "";
+  document.getElementById("cpConfirm").value = "";
+  document.getElementById("cpError").style.display = "none";
+  document.getElementById("cpSuccess").style.display = "none";
+  document.getElementById("changePasswordModal").classList.add("open");
+}
+function closeChangePasswordModal(){
+  document.getElementById("changePasswordModal").classList.remove("open");
+}
+function showCpError(msg){
+  const el = document.getElementById("cpError");
+  el.textContent = msg;
+  el.style.display = "block";
+  document.getElementById("cpSuccess").style.display = "none";
+}
+
+async function submitChangePassword(){
+  const errEl = document.getElementById("cpError");
+  const okEl = document.getElementById("cpSuccess");
+  errEl.style.display = "none"; okEl.style.display = "none";
+
+  const current = document.getElementById("cpCurrent").value.trim();
+  const next = document.getElementById("cpNew").value.trim();
+  const confirmNext = document.getElementById("cpConfirm").value.trim();
+
+  if(!current || !next || !confirmNext){ showCpError("Please fill in all three fields."); return; }
+  const currentOk = currentStudent.passwordHash
+    ? await verifySecret(current, currentStudent.passwordSalt, currentStudent.passwordHash)
+    : String(currentStudent.password) === current;
+  if(!currentOk){ showCpError("Current password is incorrect."); return; }
+  if(next.length < 4){ showCpError("New password must be at least 4 characters."); return; }
+  if(next !== confirmNext){ showCpError("New password and confirmation don't match."); return; }
+
+  const btn = document.getElementById("cpSaveBtn");
+  btn.disabled = true; btn.textContent = "Saving…";
+
+  try{
+    const { hash, salt } = await hashSecret(next);
+    const coreRef = fbDb.collection("schools").doc(portalCode).collection("data").doc("core");
+    await fbDb.runTransaction(async (tx)=>{
+      const snap = await tx.get(coreRef);
+      if(!snap.exists) throw new Error("School data not found.");
+      const data = snap.data() || {};
+      const studentsArr = data.students || [];
+      const idx = studentsArr.findIndex(s => s.id === currentStudent.id);
+      if(idx === -1) throw new Error("Student record not found.");
+      // Password changes only — the Term/Session this access is valid for
+      // (accessTerm/accessSession) is left untouched, so the new password
+      // still expires exactly like the original RRR would have. The old
+      // plaintext "password" field (if any, from a pre-hashing account) is
+      // dropped here for good — only the salted hash remains from now on.
+      const updated = Object.assign({}, studentsArr[idx], { passwordHash: hash, passwordSalt: salt });
+      delete updated.password;
+      studentsArr[idx] = updated;
+      tx.set(coreRef, { students: studentsArr }, { merge: true });
+    });
+
+    delete currentStudent.password;
+    currentStudent.passwordHash = hash;
+    currentStudent.passwordSalt = salt;
+    schoolData.students = schoolData.students.map(s => {
+      if(s.id !== currentStudent.id) return s;
+      const updated = Object.assign({}, s, {passwordHash: hash, passwordSalt: salt});
+      delete updated.password;
+      return updated;
+    });
+    localStorage.setItem("portalSession", JSON.stringify({code: portalCode, id: currentStudent.id, password: next}));
+
+    okEl.textContent = "Password changed successfully.";
+    okEl.style.display = "block";
+    btn.disabled = false; btn.textContent = "Save";
+    setTimeout(closeChangePasswordModal, 1200);
+  }catch(err){
+    console.error(err);
+    showCpError("Couldn't save your new password. Check your internet connection and try again.");
+    btn.disabled = false; btn.textContent = "Save";
+  }
+}
+
+function enterApp(){
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appScreen").classList.add("show");
+  document.getElementById("topbarName").textContent = `${currentStudent.name} (${currentStudent.className}${currentStudent.stream ? " — "+currentStudent.stream : ""})`;
+  document.getElementById("navSchoolName").textContent = schoolData.schoolName || "Student Portal";
+  document.getElementById("navStudentClass").textContent = `${currentStudent.className}${currentStudent.stream ? " — "+currentStudent.stream : ""}`;
+  if(schoolData.schoolLogo){
+    const nl = document.getElementById("navLogo");
+    nl.src = schoolData.schoolLogo;
+    nl.style.display = "block";
+  }
+
+  // Build term/session dropdowns from whatever terms/sessions actually have scores for this student
+  const myScores = schoolData.scores.filter(s => s.studentId === currentStudent.id);
+  const terms = [...new Set(myScores.map(s => s.term))];
+  const sessions = [...new Set(myScores.map(s => s.session || DEFAULT_SESSION))];
+  const termOrder = ["1st Term","2nd Term","3rd Term"];
+  terms.sort((a,b)=> termOrder.indexOf(a) - termOrder.indexOf(b));
+  sessions.sort().reverse();
+
+  const termSel = document.getElementById("termSelect");
+  const sesSel = document.getElementById("sessionSelect");
+  termSel.innerHTML = (terms.length ? terms : termOrder).map(t=>`<option value="${t}">${t}</option>`).join("");
+  sesSel.innerHTML = (sessions.length ? sessions : [DEFAULT_SESSION]).map(s=>`<option value="${s}">${s}</option>`).join("");
+
+  renderResult();
+  renderFees();
+  renderAnnouncements();
+  renderProfile();
+  renderDashboard();
+  showView("dashboard");
+}
+
+const VIEW_TITLES = { dashboard:"Dashboard", results:"Results", fees:"Fees", announcements:"Announcements", profile:"Profile" };
+
+// Switches between sidebar views, mirroring the admin app's showSection().
+function showView(name){
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active-view"));
+  const target = document.getElementById("view-"+name);
+  if(target) target.classList.add("active-view");
+  document.querySelectorAll("#studentNav button[data-view]").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll('#studentNav button[data-view="'+name+'"]').forEach(b => b.classList.add("active"));
+  document.getElementById("topbarTitle").textContent = VIEW_TITLES[name] || "";
+  if(name === "dashboard") renderDashboard();
+  if(name === "announcements") renderAnnouncements();
+  if(name === "profile") renderProfile();
+  closeSidebar();
+}
+
+function openSidebar(){
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("sidebarOverlay").classList.add("show");
+}
+function closeSidebar(){
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sidebarOverlay").classList.remove("show");
+}
+
+// Builds the Dashboard home view: a welcome card, quick-stat tiles the
+// student can tap to jump to a section, and a short preview of the most
+// recent announcements.
+function renderDashboard(){
+  const stu = currentStudent;
+  if(!stu) return;
+
+  document.getElementById("welcomeName").textContent = `Welcome, ${stu.name.split(" ")[0]}!`;
+  document.getElementById("welcomeSub").textContent = `${stu.className}${stu.stream ? " — "+stu.stream : ""} · ${schoolData.currentTerm || ""}${schoolData.currentSession ? ", "+schoolData.currentSession : ""}`;
+  const avatarEl = document.getElementById("welcomeAvatar");
+  if(stu.photo){ avatarEl.src = stu.photo; avatarEl.style.display = "block"; }
+  else { avatarEl.style.display = "none"; }
+
+  // Latest result summary (most recent term/session with any score on file,
+  // but only if the admin has actually published that term/session yet)
+  const myScores = schoolData.scores.filter(s => s.studentId === stu.id);
+  let latestLabel = "No results yet", latestPct = null;
+  if(myScores.length){
+    const term = document.getElementById("termSelect").value || myScores[myScores.length-1].term;
+    const session = document.getElementById("sessionSelect").value || (myScores[myScores.length-1].session || DEFAULT_SESSION);
+    if(!isResultsPublished(term, session)){
+      latestLabel = "Not yet uploaded";
+    } else {
+      const subs = getSubjectsForClassStream(stu.className, stu.stream, schoolData.classSubjects);
+      const termScores = myScores.filter(s => sameTermSession(s, term, session, DEFAULT_SESSION) && subs.includes(s.subject));
+      if(termScores.length){
+        const total = termScores.reduce((a,b)=>a+(parseFloat(b.total)||0),0);
+        latestPct = (total/(termScores.length*100)*100).toFixed(1);
+        latestLabel = `${term}, ${session}`;
+      }
+    }
+  }
+
+  const paid = schoolData.fees[stu.id] || 0;
+  const expected = expectedFeeForStudent(stu);
+  const outstanding = Math.max(0, expected - paid);
+  const feeText = expected === 0 ? "No fee set" : (outstanding === 0 ? "Fully Paid" : `₦${outstanding.toLocaleString()} due`);
+
+  const unread = (schoolData.announcements||[]).filter(a => !a.className || a.className === stu.className).length;
+
+  document.getElementById("dashTiles").innerHTML = `
+    <button class="dash-tile" onclick="showView('results')">
+      <div class="di di-blue"><i class="fas fa-chart-bar"></i></div>
+      <div class="dn">${latestPct !== null ? latestPct+"%" : "—"}</div>
+      <div class="dl">${latestPct !== null ? "Latest Result ("+latestLabel+")" : latestLabel}</div>
+    </button>
+    <button class="dash-tile" onclick="showView('fees')">
+      <div class="di di-green"><i class="fas fa-money-bill-wave"></i></div>
+      <div class="dn">${feeText}</div>
+      <div class="dl">Fee Status</div>
+    </button>
+    <button class="dash-tile" onclick="showView('announcements')">
+      <div class="di di-amber"><i class="fas fa-bullhorn"></i></div>
+      <div class="dn">${unread}</div>
+      <div class="dl">Announcements</div>
+    </button>
+    <button class="dash-tile" onclick="showView('profile')">
+      <div class="di di-purple"><i class="fas fa-id-card"></i></div>
+      <div class="dn">${stu.photo ? "Uploaded" : "Missing"}</div>
+      <div class="dl">Passport Photo</div>
+    </button>
+  `;
+
+  const badge = document.getElementById("announceBadge");
+  if(unread > 0){ badge.textContent = unread; badge.style.display = "inline-block"; }
+  else { badge.style.display = "none"; }
+
+  const relevant = (schoolData.announcements||[])
+    .filter(a => !a.className || a.className === stu.className)
+    .slice(0, 3);
+  document.getElementById("dashAnnouncements").innerHTML = relevant.length
+    ? relevant.map(announcementCardHtml).join("")
+    : `<p style="color:#94a3b8;font-size:13.5px;">No announcements yet.</p>`;
+}
+
+function announcementCardHtml(a){
+  const d = new Date(a.date);
+  const dateStr = isNaN(d) ? "" : d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
+  return `<div class="announce-card">
+    <h4>${a.title}</h4>
+    <div class="meta">${dateStr}${a.className ? " &middot; "+a.className : " &middot; All Classes"}</div>
+    <p>${a.message}</p>
+  </div>`;
+}
+
+function renderAnnouncements(){
+  const area = document.getElementById("announcementsArea");
+  if(!area || !currentStudent) return;
+  const relevant = (schoolData.announcements||[]).filter(a => !a.className || a.className === currentStudent.className);
+  area.innerHTML = relevant.length
+    ? relevant.map(announcementCardHtml).join("")
+    : `<div class="status-msg">No announcements have been posted yet.</div>`;
+}
+
+function renderProfile(){
+  const grid = document.getElementById("profileInfoGrid");
+  if(!grid || !currentStudent) return;
+  const stu = currentStudent;
+  grid.innerHTML = `
+    <div><span class="lbl">Name</span><span class="val">${stu.name}</span></div>
+    <div><span class="lbl">Student ID</span><span class="val">${stu.id}</span></div>
+    <div><span class="lbl">Class</span><span class="val">${stu.className}</span></div>
+    <div><span class="lbl">Stream</span><span class="val">${stu.stream || "—"}</span></div>
+    <div><span class="lbl">Sex</span><span class="val">${stu.sex || "—"}</span></div>
+    <div><span class="lbl">Type</span><span class="val">${stu.type || "Day"}</span></div>
+  `;
+  const preview = document.getElementById("passportPreview");
+  if(preview){
+    preview.innerHTML = stu.photo ? `<img src="${stu.photo}" alt="Passport photo">` : "No Photo";
+  }
+  const saveBtn = document.getElementById("passportSaveBtn");
+  if(saveBtn) saveBtn.style.display = "none";
+  const fileInput = document.getElementById("passportFileInput");
+  if(fileInput) fileInput.value = "";
+}
+
+let pendingPassportDataUrl = null;
+
+// Reads the chosen file, downsizes it via canvas (keeps the Firestore
+// document small — base64 photo storage per the school's setup), and shows
+// a live preview before the student confirms with Save Photo.
+function handlePassportFileChange(event){
+  const errEl = document.getElementById("passportError");
+  const okEl = document.getElementById("passportSuccess");
+  errEl.style.display = "none"; okEl.style.display = "none";
+  const file = event.target.files && event.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith("image/")){
+    errEl.textContent = "Please choose an image file.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      const maxDim = 400;
+      let w = img.width, h = img.height;
+      if(w > h && w > maxDim){ h = Math.round(h * (maxDim/w)); w = maxDim; }
+      else if(h > maxDim){ w = Math.round(w * (maxDim/h)); h = maxDim; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      pendingPassportDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      document.getElementById("passportPreview").innerHTML = `<img src="${pendingPassportDataUrl}" alt="Preview">`;
+      document.getElementById("passportSaveBtn").style.display = "inline-block";
+    };
+    img.onerror = function(){
+      errEl.textContent = "Couldn't read that image. Please try a different file.";
+      errEl.style.display = "block";
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Saves the resized photo into this student's record in the shared "core"
+// Firestore doc, using the same read-modify-write transaction pattern as
+// submitChangePassword() so it can't clobber a concurrent admin edit.
+async function savePassportPhoto(){
+  if(!pendingPassportDataUrl) return;
+  const errEl = document.getElementById("passportError");
+  const okEl = document.getElementById("passportSuccess");
+  errEl.style.display = "none"; okEl.style.display = "none";
+  const btn = document.getElementById("passportSaveBtn");
+  btn.disabled = true; btn.textContent = "Saving…";
+
+  try{
+    const coreRef = fbDb.collection("schools").doc(portalCode).collection("data").doc("core");
+    await fbDb.runTransaction(async (tx)=>{
+      const snap = await tx.get(coreRef);
+      if(!snap.exists) throw new Error("School data not found.");
+      const data = snap.data() || {};
+      const studentsArr = data.students || [];
+      const idx = studentsArr.findIndex(s => s.id === currentStudent.id);
+      if(idx === -1) throw new Error("Student record not found.");
+      studentsArr[idx] = Object.assign({}, studentsArr[idx], { photo: pendingPassportDataUrl });
+      tx.set(coreRef, { students: studentsArr }, { merge: true });
+    });
+
+    currentStudent.photo = pendingPassportDataUrl;
+    schoolData.students = schoolData.students.map(s => s.id === currentStudent.id ? Object.assign({}, s, {photo: pendingPassportDataUrl}) : s);
+    pendingPassportDataUrl = null;
+
+    okEl.textContent = "Passport photo saved. It's now visible to your school's admin.";
+    okEl.style.display = "block";
+    btn.style.display = "none";
+    btn.disabled = false; btn.textContent = "Save Photo";
+    renderDashboard();
+  }catch(err){
+    console.error(err);
+    errEl.textContent = "Couldn't save your photo. Check your internet connection and try again.";
+    errEl.style.display = "block";
+    btn.disabled = false; btn.textContent = "Save Photo";
+  }
+}
+
+// Same fee calculation the admin app uses (Bursary tab): a per-class Day/
+// Boarding fee structure, matched against what the student has paid so far,
+// minus any discount the bursar/admin has applied to this student.
+function expectedFeeForStudent(s){
+  const st = schoolData.feeStructure[s.className] || { day: 0, boarding: 0 };
+  const gross = (s.type === "Boarding") ? (st.boarding || 0) : (st.day || 0);
+  const discount = (schoolData.discounts && schoolData.discounts[s.id] && schoolData.discounts[s.id].amount) || 0;
+  return Math.max(0, gross - discount);
+}
+
+function renderFees(){
+  const area = document.getElementById("feesArea");
+  if(!area) return;
+  const stu = currentStudent;
+  const paid = schoolData.fees[stu.id] || 0;
+  const expected = expectedFeeForStudent(stu);
+  const outstanding = Math.max(0, expected - paid);
+  const typeLabel = stu.type === "Boarding" ? "🏠 Boarding" : "🚶 Day";
+  const discount = (schoolData.discounts && schoolData.discounts[stu.id] && schoolData.discounts[stu.id].amount) || 0;
+
+  let statusClass, statusText;
+  if(expected === 0){
+    statusClass = paid > 0 ? "paid" : "unpaid";
+    statusText = paid > 0 ? "✅ Payment on record" : "No fee structure has been set for your class yet.";
+  } else if(outstanding === 0){
+    statusClass = "paid"; statusText = "✅ Fully Paid";
+  } else if(paid > 0){
+    statusClass = "partial"; statusText = "⚠ Partial Payment — balance outstanding";
+  } else {
+    statusClass = "unpaid"; statusText = "✗ Unpaid";
+  }
+
+  area.innerHTML = `
+    <div class="fee-card">
+      <div class="fee-status-banner ${statusClass}"><div class="n">${statusText}</div></div>
+      <div class="fee-breakdown">
+        <div class="fee-row"><span class="flbl">Student</span><span class="fval">${stu.name}</span></div>
+        <div class="fee-row"><span class="flbl">Class</span><span class="fval">${stu.className}${stu.stream ? " — "+stu.stream : ""} (${typeLabel})</span></div>
+        ${discount > 0 ? `<div class="fee-row"><span class="flbl">Discount Applied</span><span class="fval">-₦${discount.toLocaleString()}</span></div>` : ""}
+        <div class="fee-row"><span class="flbl">Expected Fee</span><span class="fval">₦${expected.toLocaleString()}</span></div>
+        <div class="fee-row total-paid"><span class="flbl">Amount Paid</span><span class="fval">₦${paid.toLocaleString()}</span></div>
+        <div class="fee-row outstanding"><span class="flbl">Balance Outstanding</span><span class="fval">₦${outstanding.toLocaleString()}</span></div>
+      </div>
+    </div>
+    <p style="text-align:center;color:#94a3b8;font-size:12.5px;margin-top:14px;">Fee records are kept by your school's admin office. Contact them if you believe this is incorrect.</p>
+    <p style="text-align:center;color:#94a3b8;font-size:12.5px;margin-top:6px;">🔑 Your portal password is valid for ${schoolData.currentTerm}, ${schoolData.currentSession} only. A new RRR/password will be printed on your invoice next term after you pay in full.</p>
+  `;
+}
+
+function isResultsPublished(term, session){
+  return !!(schoolData.resultsPublished && schoolData.resultsPublished[term + "|" + session]);
+}
+
+function renderResult(){
+  const term = document.getElementById("termSelect").value;
+  const session = document.getElementById("sessionSelect").value;
+  const area = document.getElementById("resultArea");
+  const stu = currentStudent;
+
+  if(!isResultsPublished(term, session)){
+    area.innerHTML = `<div class="status-msg">Your school hasn't uploaded results for ${term}, ${session} yet.<br>Please check back later, or try a different term/session above.</div>`;
+    return;
+  }
+
+  const subs = getSubjectsForClassStream(stu.className, stu.stream, schoolData.classSubjects);
+  const isSenior = stu.className.startsWith("SSS");
+
+  const myRows = subs.map(sub=>{
+    const sc = schoolData.scores.find(s => s.studentId===stu.id && s.subject===sub && sameTermSession(s, term, session, DEFAULT_SESSION));
+    return { subject: sub, sc };
+  }).filter(r => r.sc); // only show subjects with an entered score
+
+  if(myRows.length === 0){
+    area.innerHTML = `<div class="status-msg">No result has been entered yet for ${stu.name} in ${term}, ${session}.<br>Please check back later or try a different term/session above.</div>`;
+    return;
+  }
+
+  // Class ranking (matches the admin app's report sheet logic)
+  const classmates = schoolData.students.filter(s => s.className===stu.className && (!classUsesStreams(stu.className) || !stu.stream || s.stream===stu.stream));
+  const ranked = classmates.map(s=>{
+    const sScores = schoolData.scores.filter(sc => sc.studentId===s.id && sameTermSession(sc, term, session, DEFAULT_SESSION) && subs.includes(sc.subject));
+    const total = sScores.reduce((a,b)=>a+(parseFloat(b.total)||0),0);
+    const count = sScores.length;
+    return { id: s.id, total, avg: count>0 ? total/count : 0 };
+  }).sort((a,b)=> isSenior ? (b.avg-a.avg || b.total-a.total) : (b.total-a.total)); // ties on average are broken by whoever scored the higher raw total
+  const myTotal = (ranked.find(r=>r.id===stu.id)||{total:0}).total;
+  const myRankIdx = ranked.findIndex(r=>r.id===stu.id);
+  const position = computeRanks(ranked)[myRankIdx];
+  const outOf = ranked.length;
+  const percentage = myRows.length ? (myTotal / (myRows.length*100) * 100) : 0;
+  const overallGrade = getGrade(percentage);
+
+  function subjectPosition(sub){
+    const subRanked = classmates.map(s=>{
+      const sc = schoolData.scores.find(x => x.studentId===s.id && x.subject===sub && sameTermSession(x, term, session, DEFAULT_SESSION));
+      return { id: s.id, total: sc ? (parseFloat(sc.total)||0) : null };
+    }).filter(r=>r.total!==null).sort((a,b)=>b.total-a.total);
+    const idx = subRanked.findIndex(r=>r.id===stu.id);
+    if(idx===-1) return "—";
+    const myT = subRanked[idx].total;
+    const ahead = subRanked.filter(r=>r.total>myT).length;
+    return ordinal(ahead+1);
+  }
+
+  const rowsHtml = myRows.map(({subject, sc})=>{
+    const ca = caTotalFromScore(sc);
+    const exam = sc.exam !== undefined ? sc.exam : "";
+    const total = sc.total !== undefined ? sc.total : "";
+    const grade = total!=="" ? getGrade(parseFloat(total)) : "";
+    return `<tr>
+      <td>${subject}</td>
+      <td class="num">${ca}</td>
+      <td class="num">${exam}</td>
+      <td class="num"><strong>${total}</strong></td>
+      <td class="num"><span class="grade-pill grade-${grade}">${grade}</span></td>
+      <td class="num">${subjectPosition(subject)}</td>
+    </tr>`;
+  }).join("");
+
+  const mySkills = schoolData.skills.filter(sk => sk.studentId===stu.id && sameTermSession(sk, term, session, DEFAULT_SESSION) && sk.rating);
+  const skillsHtml = mySkills.length ? `
+    <div class="section-title">Skills & Conduct</div>
+    <div class="skills-grid">${mySkills.map(sk=>`<div class="skill-row"><span>${sk.name}</span><b>${sk.rating}/5</b></div>`).join("")}</div>` : "";
+
+  const myRemarks = schoolData.remarks.filter(r => r.studentId===stu.id && sameTermSession(r, term, session, DEFAULT_SESSION));
+  const fmRemark = myRemarks.find(r=>r.formMasterRemark && r.formMasterRemark.trim());
+  const princRemark = myRemarks.find(r=>r.principalRemark && r.principalRemark.trim());
+  const remarksHtml = (fmRemark || princRemark) ? `
+    <div class="section-title">Remarks</div>
+    <div class="remarks-box">
+      ${fmRemark ? `<div class="remark"><div class="who">Form Teacher</div>${fmRemark.formMasterRemark}</div>` : ""}
+      ${princRemark ? `<div class="remark"><div class="who">Principal</div>${princRemark.principalRemark}</div>` : ""}
+    </div>` : "";
+
+  const formMasterName = schoolData.formMasters ? schoolData.formMasters[stu.className] : "";
+  const teacherSigImg = formMasterName && schoolData.teacherSignatures[formMasterName] ? schoolData.teacherSignatures[formMasterName] : null;
+
+  area.innerHTML = `
+    <div class="card" id="resultCard">
+      <div class="rc-header">
+        ${schoolData.schoolLogo
+          ? `<img class="logo" src="${schoolData.schoolLogo}">`
+          : `<div class="logo-fallback">SCHOOL<br>LOGO</div>`}
+        <div>
+          <h2>${(schoolData.schoolName||"").toUpperCase()}</h2>
+          <p>${schoolData.schoolInfo||""}</p>
+          <p style="margin-top:4px;font-weight:600;">Terminal Report — ${term}, ${session}</p>
+        </div>
+      </div>
+
+      <div class="rc-student">
+        <div><span class="lbl">Student</span><span class="val">${stu.name}</span></div>
+        <div><span class="lbl">Student ID</span><span class="val">${stu.id}</span></div>
+        <div><span class="lbl">Class</span><span class="val">${stu.className}${stu.stream ? " — "+stu.stream : ""}</span></div>
+        <div><span class="lbl">Sex</span><span class="val">${stu.sex||"—"}</span></div>
+      </div>
+
+      <div class="summary-strip">
+        <div class="summary-cell"><div class="n">${myTotal}</div><div class="l">Total Score</div></div>
+        <div class="summary-cell"><div class="n">${percentage.toFixed(1)}%</div><div class="l">Percentage</div></div>
+        <div class="summary-cell grade"><div class="n">${overallGrade}</div><div class="l">Overall Grade</div></div>
+        <div class="summary-cell"><div class="n">${position ? ordinal(position) : "—"}</div><div class="l">Class Position</div></div>
+        <div class="summary-cell"><div class="n">${outOf}</div><div class="l">Out Of</div></div>
+      </div>
+
+      <div class="section-title">Subject Scores</div>
+      <table class="results">
+        <thead><tr><th>Subject</th><th class="num">CA (${assessmentCaTotal()})</th><th class="num">${assessmentExamLabel()} (${assessmentExamMax()})</th><th class="num">Total</th><th class="num">Grade</th><th class="num">Position</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+
+      ${skillsHtml}
+      ${remarksHtml}
+
+      <div class="sig-row">
+        ${teacherSigImg ? `<div class="sig-block"><img src="${teacherSigImg}"><div class="line"></div><div class="label">Form Teacher${formMasterName ? " — "+formMasterName : ""}</div></div>` : ""}
+        ${schoolData.principalSignature ? `<div class="sig-block"><img src="${schoolData.principalSignature}"><div class="line"></div><div class="label">Principal${schoolData.principalName ? " — "+schoolData.principalName : ""}</div></div>` : ""}
+        ${schoolData.schoolStamp ? `<div class="sig-block"><img class="stamp-img" src="${schoolData.schoolStamp}"><div class="label">Official Stamp</div></div>` : ""}
+      </div>
+    </div>
+
+    <div class="action-row">
+      <button class="btn-primary" onclick="openPrintableSheet()">🖨️ Print / Save as PDF</button>
+    </div>
+  `;
+}
+
+// Opens the same print-ready sheet the admin app opens from its own
+// "Generate PDF" button — a clean, isolated document rendered by the
+// browser's native print engine, so "Print > Save as PDF" always comes out
+// crisp and correctly laid out.
+function openPrintableSheet(){
+  if(!currentStudent) return;
+  const term = document.getElementById("termSelect").value;
+  const session = document.getElementById("sessionSelect").value;
+  if(!isResultsPublished(term, session)){
+    alert("Your school hasn't uploaded results for " + term + ", " + session + " yet.");
+    return;
+  }
+  let pageHtml;
+  try{
+    pageHtml = buildReportCardPage(currentStudent, term, session);
+  }catch(err){
+    alert("Sorry, the result sheet could not be created.");
+    return;
+  }
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>${currentStudent.name} – ${term} Report</title>
+<style>${getReportCardCss(schoolData.reportCardColor)}</style></head><body>
+<div class="np"><button onclick="window.print()">🖨️ Print / Save as PDF</button></div>
+<div class="pcwrap">${pageHtml}</div>
+</body></html>`;
+  const win = window.open("", "_blank");
+  if(!win){
+    alert("Please allow popups for this page, then try again.");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+}
+
+// Allow pressing Enter on the login fields
+["loginCode","loginId","loginPin"].forEach(id=>{
+  document.addEventListener("DOMContentLoaded", ()=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener("keydown", e=>{ if(e.key==="Enter") doLogin(); });
+  });
+});
+
+// Auto-resume a saved session (so students don't have to log in every visit)
+window.addEventListener("DOMContentLoaded", ()=>{
+  document.getElementById("pageTitle").textContent = BRAND.productTitle;
+  document.title = BRAND.productTitle;
+  const vendorEl = document.getElementById("brandVendorName");
+  if(vendorEl) vendorEl.textContent = BRAND.vendorName;
+});
+
+window.addEventListener("DOMContentLoaded", ()=>{
+  const saved = localStorage.getItem("portalSession");
+  if(saved){
+    try{
+      const {code, id, password} = JSON.parse(saved);
+      document.getElementById("loginCode").value = code;
+      document.getElementById("loginId").value = id;
+      document.getElementById("loginPin").value = password;
+      doLogin();
+    }catch(e){}
+  }
+});
+</script>
+</body>
+</html>
