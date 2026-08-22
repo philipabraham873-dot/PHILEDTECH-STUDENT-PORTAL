@@ -83,12 +83,30 @@ exports.handler = async (event) => {
     }
 
     // ---- Teacher / leadership / bursar: verified against the hashed PIN
-    // already stored in teacherAccounts.
+    // already stored in teacherAccounts. Falls back to legacy plaintext PINs
+    // (from before hashing was added) and migrates them to a hash right here
+    // on success, so plaintext never lingers past this login.
     if (actorType === "teacher") {
-      const acctSnap = await dataRef.doc("teacherAccounts").get();
+      const acctRef = dataRef.doc("teacherAccounts");
+      const acctSnap = await acctRef.get();
       const accounts = acctSnap.exists ? (acctSnap.data().teacherAccounts || []) : [];
       const teacher = accounts.find(t => t.id === id);
-      if (!teacher || !verifyPbkdf2(secret, teacher.pinSalt, teacher.pinHash)) {
+      if (!teacher) {
+        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Staff ID or PIN." }) };
+      }
+      let verified = false;
+      if (teacher.pinHash && teacher.pinSalt) {
+        verified = verifyPbkdf2(secret, teacher.pinSalt, teacher.pinHash);
+      } else if (String(teacher.pin) === String(secret)) {
+        verified = true;
+        const salt = crypto.randomBytes(16).toString("hex");
+        const derived = crypto.pbkdf2Sync(String(secret), Buffer.from(salt, "hex"), 210000, 32, "sha256").toString("hex");
+        teacher.pinHash = derived;
+        teacher.pinSalt = salt;
+        delete teacher.pin;
+        await acctRef.set({ teacherAccounts: accounts }, { merge: true });
+      }
+      if (!verified) {
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Staff ID or PIN." }) };
       }
       const token = await admin.auth().createCustomToken("teacher-" + syncCode + "-" + id, {
@@ -100,12 +118,31 @@ exports.handler = async (event) => {
     }
 
     // ---- Student: verified against the hashed password/RRR stored on
-    // their record in core.
+    // their record in core. Falls back to legacy plaintext passwords (from
+    // before hashing was added) and migrates them to a hash right here on
+    // success, so plaintext never lingers past this login.
     if (actorType === "student") {
-      const coreSnap = await dataRef.doc("core").get();
-      const students = coreSnap.exists ? (coreSnap.data().students || []) : [];
+      const coreRef = dataRef.doc("core");
+      const coreSnap = await coreRef.get();
+      const coreData = coreSnap.exists ? coreSnap.data() : {};
+      const students = coreData.students || [];
       const student = students.find(s => s.id === id);
-      if (!student || !verifyPbkdf2(secret, student.passwordSalt, student.passwordHash)) {
+      if (!student) {
+        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Student ID or password." }) };
+      }
+      let verified = false;
+      if (student.passwordHash && student.passwordSalt) {
+        verified = verifyPbkdf2(secret, student.passwordSalt, student.passwordHash);
+      } else if (String(student.password) === String(secret)) {
+        verified = true;
+        const salt = crypto.randomBytes(16).toString("hex");
+        const derived = crypto.pbkdf2Sync(String(secret), Buffer.from(salt, "hex"), 210000, 32, "sha256").toString("hex");
+        student.passwordHash = derived;
+        student.passwordSalt = salt;
+        delete student.password;
+        await coreRef.set({ students }, { merge: true });
+      }
+      if (!verified) {
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Student ID or password." }) };
       }
       const token = await admin.auth().createCustomToken("student-" + syncCode + "-" + id, {

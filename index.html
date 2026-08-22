@@ -999,7 +999,22 @@ async function doLogin(){
 
   try{
     initFirebase();
-    await firebase.auth().signInAnonymously();
+
+    // Credentials are verified server-side (the function checks the hashed
+    // password and only hands back a token if it matches) — the browser
+    // never sees or compares the stored hash itself.
+    const verifyRes = await fetch("https://philedtech-student-portal.netlify.app/.netlify/functions/verify-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ syncCode: code, actorType: "student", id, secret: password })
+    });
+    const verifyData = await verifyRes.json();
+    if(!verifyRes.ok || !verifyData.token){
+      showLoginError(verifyData.error || "Login failed. Check your details and try again.");
+      btn.disabled = false; btn.textContent = "Log In";
+      return;
+    }
+    await firebase.auth().signInWithCustomToken(verifyData.token);
 
     const schoolRef = fbDb.collection("schools").doc(code).collection("data");
     const [coreSnap, settingsSnap, brandingSnap, subjectsSnap, teacherSigSnap, feesSnap, announceSnap, attendanceSnap] = await Promise.all([
@@ -1028,6 +1043,8 @@ async function doLogin(){
     const announceDoc = announceSnap.exists ? announceSnap.data() : {};
     const attendanceDoc = attendanceSnap.exists ? attendanceSnap.data() : {};
 
+    // The server already verified this student's credential — re-find their
+    // record here purely to populate the portal's local view of the data.
     const student = (core.students || []).find(s => s.id === id);
     if(!student){
       showLoginError("Student ID not found for this school.");
@@ -1038,39 +1055,11 @@ async function doLogin(){
     const schoolTerm = settings.currentTerm || "";
     const schoolSession = settings.currentSession || "";
     const accessCurrent = student.accessTerm === schoolTerm && student.accessSession === schoolSession;
-    const hasCredential = !!(student.passwordHash || student.password);
-
-    if(!hasCredential || !accessCurrent){
+    if(!accessCurrent){
       showLoginError("No active password for this term. Pay the school fee in full and your school will print an invoice with your RRR (portal password). Already paid? Ask the school office to reissue your access.");
       btn.disabled = false; btn.textContent = "Log In";
+      await firebase.auth().signOut();
       return;
-    }
-    if(student.passwordHash && student.passwordSalt){
-      const ok = await verifySecret(password, student.passwordSalt, student.passwordHash);
-      if(!ok){
-        showLoginError("Incorrect password.");
-        btn.disabled = false; btn.textContent = "Log In";
-        return;
-      }
-    } else {
-      // Legacy plaintext account (created before hashing was added).
-      // Verify against the old field, then transparently upgrade it to a
-      // salted hash so the plaintext password never lingers in the database
-      // past this login.
-      if(String(student.password) !== password){
-        showLoginError("Incorrect password.");
-        btn.disabled = false; btn.textContent = "Log In";
-        return;
-      }
-      const { hash, salt } = await hashSecret(password);
-      student.passwordHash = hash;
-      student.passwordSalt = salt;
-      delete student.password;
-      try{
-        await schoolRef.doc("core").set({ students: core.students }, {merge:true});
-      }catch(migrateErr){
-        console.error("Password migration write failed (non-fatal):", migrateErr);
-      }
     }
 
     // Success
