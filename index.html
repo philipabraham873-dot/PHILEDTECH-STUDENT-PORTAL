@@ -987,6 +987,83 @@ async function verifySecret(secret, saltHex, expectedHash){
   return hash === expectedHash;
 }
 
+// Fetches and populates this student's portal data, given an already
+// signed-in Firebase session (via fresh login or a restored one). Throws
+// with a user-facing message on failure.
+async function loadStudentPortalDataAndEnter(code, id){
+  const schoolRef = fbDb.collection("schools").doc(code).collection("data");
+  const [coreSnap, settingsSnap, brandingSnap, subjectsSnap, teacherSigSnap, feesSnap, announceSnap, attendanceSnap] = await Promise.all([
+    schoolRef.doc("core").get(),
+    schoolRef.doc("settings").get(),
+    schoolRef.doc("branding").get(),
+    schoolRef.doc("subjects").get(),
+    schoolRef.doc("teacherSignatures").get(),
+    schoolRef.doc("fees").get(),
+    schoolRef.doc("announcements").get(),
+    schoolRef.doc("attendance").get()
+  ]);
+
+  if(!coreSnap.exists){
+    throw new Error("School Portal Code not found. Check the code with your school — and make sure they have Multi-Device Sync switched on.");
+  }
+
+  const core = coreSnap.data() || {};
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+  const branding = brandingSnap.exists ? brandingSnap.data() : {};
+  const subjectsDoc = subjectsSnap.exists ? subjectsSnap.data() : {};
+  const teacherSigs = teacherSigSnap.exists ? teacherSigSnap.data() : {};
+  const feesDoc = feesSnap.exists ? feesSnap.data() : {};
+  const announceDoc = announceSnap.exists ? announceSnap.data() : {};
+  const attendanceDoc = attendanceSnap.exists ? attendanceSnap.data() : {};
+
+  const student = (core.students || []).find(s => s.id === id);
+  if(!student){
+    throw new Error("Student ID not found for this school.");
+  }
+
+  const schoolTerm = settings.currentTerm || "";
+  const schoolSession = settings.currentSession || "";
+  const accessCurrent = student.accessTerm === schoolTerm && student.accessSession === schoolSession;
+  if(!accessCurrent){
+    await firebase.auth().signOut();
+    throw new Error("No active password for this term. Pay the school fee in full and your school will print an invoice with your RRR (portal password). Already paid? Ask the school office to reissue your access.");
+  }
+
+  portalCode = code;
+  schoolData = {
+    students: core.students || [],
+    scores: core.scores || [],
+    skills: core.skills || [],
+    remarks: core.remarks || [],
+    classSubjects: subjectsDoc.classSubjects || {},
+    schoolName: settings.schoolName || "School",
+    schoolInfo: settings.schoolInfo || "",
+    schoolVision: settings.schoolVision || "",
+    principalName: settings.principalName || "",
+    formMasters: settings.formMasters || {},
+    resumptionDate: settings.resumptionDate || "",
+    schoolLogo: normalizeAsset(branding.schoolLogo),
+    schoolStamp: normalizeAsset(branding.schoolStamp),
+    principalSignature: normalizeAsset(branding.principalSignature),
+    reportCardColor: (branding.reportCardColor && /^#[0-9a-fA-F]{3,6}$/.test(branding.reportCardColor)) ? branding.reportCardColor : "#1565C0",
+    teacherSignatures: teacherSigs.teacherSignatures || {},
+    fees: feesDoc.fees || {},
+    feeStructure: feesDoc.feeStructure || {},
+    discounts: feesDoc.discounts || {},
+    attendance: attendanceDoc.attendance || {},
+    announcements: announceDoc.announcements || [],
+    resultsPublished: settings.resultsPublished || {},
+    reportWatermarkEnabled: !!settings.reportWatermarkEnabled,
+    cumulativeAverageEnabled: !!settings.cumulativeAverageEnabled,
+    assessmentConfig: settings.assessmentConfig || schoolData.assessmentConfig,
+    gradingScale: settings.gradingScale || schoolData.gradingScale,
+    currentTerm: schoolTerm,
+    currentSession: schoolSession
+  };
+  currentStudent = student;
+  enterApp();
+}
+
 async function doLogin(){
   clearLoginError();
   const code = document.getElementById("loginCode").value.trim().toUpperCase();
@@ -1016,96 +1093,19 @@ async function doLogin(){
     }
     await firebase.auth().signInWithCustomToken(verifyData.token);
 
-    const schoolRef = fbDb.collection("schools").doc(code).collection("data");
-    const [coreSnap, settingsSnap, brandingSnap, subjectsSnap, teacherSigSnap, feesSnap, announceSnap, attendanceSnap] = await Promise.all([
-      schoolRef.doc("core").get(),
-      schoolRef.doc("settings").get(),
-      schoolRef.doc("branding").get(),
-      schoolRef.doc("subjects").get(),
-      schoolRef.doc("teacherSignatures").get(),
-      schoolRef.doc("fees").get(),
-      schoolRef.doc("announcements").get(),
-      schoolRef.doc("attendance").get()
-    ]);
-
-    if(!coreSnap.exists){
-      showLoginError("School Portal Code not found. Check the code with your school — and make sure they have Multi-Device Sync switched on.");
-      btn.disabled = false; btn.textContent = "Log In";
-      return;
-    }
-
-    const core = coreSnap.data() || {};
-    const settings = settingsSnap.exists ? settingsSnap.data() : {};
-    const branding = brandingSnap.exists ? brandingSnap.data() : {};
-    const subjectsDoc = subjectsSnap.exists ? subjectsSnap.data() : {};
-    const teacherSigs = teacherSigSnap.exists ? teacherSigSnap.data() : {};
-    const feesDoc = feesSnap.exists ? feesSnap.data() : {};
-    const announceDoc = announceSnap.exists ? announceSnap.data() : {};
-    const attendanceDoc = attendanceSnap.exists ? attendanceSnap.data() : {};
-
-    // The server already verified this student's credential — re-find their
-    // record here purely to populate the portal's local view of the data.
-    const student = (core.students || []).find(s => s.id === id);
-    if(!student){
-      showLoginError("Student ID not found for this school.");
-      btn.disabled = false; btn.textContent = "Log In";
-      return;
-    }
-
-    const schoolTerm = settings.currentTerm || "";
-    const schoolSession = settings.currentSession || "";
-    const accessCurrent = student.accessTerm === schoolTerm && student.accessSession === schoolSession;
-    if(!accessCurrent){
-      showLoginError("No active password for this term. Pay the school fee in full and your school will print an invoice with your RRR (portal password). Already paid? Ask the school office to reissue your access.");
-      btn.disabled = false; btn.textContent = "Log In";
-      await firebase.auth().signOut();
-      return;
-    }
-
-    // Success
-    portalCode = code;
-    schoolData = {
-      students: core.students || [],
-      scores: core.scores || [],
-      skills: core.skills || [],
-      remarks: core.remarks || [],
-      classSubjects: subjectsDoc.classSubjects || {},
-      schoolName: settings.schoolName || "School",
-      schoolInfo: settings.schoolInfo || "",
-      schoolVision: settings.schoolVision || "",
-      principalName: settings.principalName || "",
-      formMasters: settings.formMasters || {},
-      resumptionDate: settings.resumptionDate || "",
-      schoolLogo: normalizeAsset(branding.schoolLogo),
-      schoolStamp: normalizeAsset(branding.schoolStamp),
-      principalSignature: normalizeAsset(branding.principalSignature),
-      reportCardColor: (branding.reportCardColor && /^#[0-9a-fA-F]{3,6}$/.test(branding.reportCardColor)) ? branding.reportCardColor : "#1565C0",
-      teacherSignatures: teacherSigs.teacherSignatures || {},
-      fees: feesDoc.fees || {},
-      feeStructure: feesDoc.feeStructure || {},
-      discounts: feesDoc.discounts || {},
-      attendance: attendanceDoc.attendance || {},
-      announcements: announceDoc.announcements || [],
-      resultsPublished: settings.resultsPublished || {},
-      reportWatermarkEnabled: !!settings.reportWatermarkEnabled,
-      cumulativeAverageEnabled: !!settings.cumulativeAverageEnabled,
-      assessmentConfig: settings.assessmentConfig || schoolData.assessmentConfig,
-      gradingScale: settings.gradingScale || schoolData.gradingScale,
-      currentTerm: schoolTerm,
-      currentSession: schoolSession
-    };
-    currentStudent = student;
-    localStorage.setItem("portalSession", JSON.stringify({code, id, password}));
-    enterApp();
+    // No password is ever written to local storage — Firebase's own signed-in
+    // session (not the password itself) is what survives a page reload, via
+    // the auto-restore listener below.
+    await loadStudentPortalDataAndEnter(code, id);
   }catch(err){
     console.error(err);
-    showLoginError("Couldn't connect. Check your internet connection and try again.");
+    showLoginError(err.message || "Couldn't connect. Check your internet connection and try again.");
     btn.disabled = false; btn.textContent = "Log In";
   }
 }
 
 function doLogout(){
-  localStorage.removeItem("portalSession");
+  firebase.auth().signOut().catch(()=>{});
   location.reload();
 }
 
@@ -1176,7 +1176,7 @@ async function submitChangePassword(){
       delete updated.passwordSalt;
       return updated;
     });
-    localStorage.setItem("portalSession", JSON.stringify({code: portalCode, id: currentStudent.id, password: next}));
+    localStorage.removeItem("portalSession"); // clean up any old plaintext session from before this fix
 
     okEl.textContent = "Password changed successfully.";
     okEl.style.display = "block";
@@ -1675,25 +1675,30 @@ function openPrintableSheet(){
   });
 });
 
-// Auto-resume a saved session (so students don't have to log in every visit)
+// Auto-resume a session: Firebase keeps you signed in across reloads on its
+// own (a session token, not your actual password) — so on load, we just ask
+// "is anyone already signed in?" and if so, pull their schoolCode/studentId
+// straight from that session's claims. No password is ever stored on this
+// device for this to work.
 window.addEventListener("DOMContentLoaded", ()=>{
   document.getElementById("pageTitle").textContent = BRAND.productTitle;
   document.title = BRAND.productTitle;
   const vendorEl = document.getElementById("brandVendorName");
   if(vendorEl) vendorEl.textContent = BRAND.vendorName;
-});
 
-window.addEventListener("DOMContentLoaded", ()=>{
-  const saved = localStorage.getItem("portalSession");
-  if(saved){
+  initFirebase();
+  localStorage.removeItem("portalSession"); // clean up any old plaintext session from before this fix
+  firebase.auth().onAuthStateChanged(async (user)=>{
+    if(!user) return;
     try{
-      const {code, id, password} = JSON.parse(saved);
-      document.getElementById("loginCode").value = code;
-      document.getElementById("loginId").value = id;
-      document.getElementById("loginPin").value = password;
-      doLogin();
-    }catch(e){}
-  }
+      const idTokenResult = await user.getIdTokenResult();
+      const claims = idTokenResult.claims;
+      if(claims.role !== "student" || !claims.schoolCode || !claims.studentId) return;
+      await loadStudentPortalDataAndEnter(claims.schoolCode, claims.studentId);
+    }catch(e){
+      console.error("Session restore failed:", e);
+    }
+  });
 });
 </script>
 </body>

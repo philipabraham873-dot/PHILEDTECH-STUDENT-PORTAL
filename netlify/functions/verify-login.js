@@ -67,13 +67,12 @@ exports.handler = async (event) => {
     // today's behaviour — this just moves the check server-side so the
     // resulting session gets a real "admin" claim instead of a free
     // anonymous one that also happens to work for every other school.
+    // Works for brand-new Sync Codes too (setting up a new school for the
+    // first time), not just reconnecting to an existing one — the code
+    // matching itself is the actual credential here, nothing else to check.
     if (actorType === "admin") {
-      const coreSnap = await dataRef.doc("core").get();
-      if (!coreSnap.exists) {
-        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Portal Code not found." }) };
-      }
       if (String(secret) !== String(syncCode)) {
-        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Portal Code." }) };
+        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Portal/Sync Code." }) };
       }
       const token = await admin.auth().createCustomToken("admin-" + syncCode, {
         schoolCode: syncCode,
