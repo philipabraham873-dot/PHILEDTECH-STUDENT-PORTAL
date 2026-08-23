@@ -40,6 +40,77 @@ function verifyPbkdf2(secret, saltHex, expectedHashHex) {
   return derived.toString("hex") === expectedHashHex;
 }
 
+// ===== Brute-force lockout =====
+// Tracked per (syncCode + login type + ID) in a single small Firestore doc,
+// the same "one document per category" pattern the rest of this app already
+// uses. 5 wrong attempts within 15 minutes locks that specific account for
+// 15 minutes — a stranger guessing PINs gets stopped fast; a real user who
+// mistypes a couple of times is barely affected.
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000;
+const LOCK_MS = 15 * 60 * 1000;
+
+function attemptsRef(syncCode) {
+  return db.collection("schools").doc(syncCode).collection("data").doc("loginAttempts");
+}
+
+async function checkLockout(syncCode, key) {
+  const snap = await attemptsRef(syncCode).get();
+  const entry = snap.exists ? (snap.data().attempts || {})[key] : null;
+  if (entry && entry.lockedUntil && Date.now() < entry.lockedUntil) {
+    return Math.ceil((entry.lockedUntil - Date.now()) / 1000); // seconds remaining
+  }
+  return 0;
+}
+
+async function recordFailedAttempt(syncCode, key) {
+  const ref = attemptsRef(syncCode);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : {};
+    const attempts = data.attempts || {};
+    const now = Date.now();
+    let entry = attempts[key] || { count: 0, windowStart: now, lockedUntil: 0 };
+
+    if (!entry.windowStart || now - entry.windowStart > WINDOW_MS) {
+      entry = { count: 0, windowStart: now, lockedUntil: 0 };
+    }
+    entry.count += 1;
+    if (entry.count >= MAX_ATTEMPTS) {
+      entry.lockedUntil = now + LOCK_MS;
+    }
+    attempts[key] = entry;
+    tx.set(ref, { attempts }, { merge: true });
+  });
+}
+
+async function clearAttempts(syncCode, key) {
+  try {
+    const ref = attemptsRef(syncCode);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const data = snap.data();
+      const attempts = data.attempts || {};
+      if (attempts[key]) {
+        delete attempts[key];
+        tx.set(ref, { attempts }, { merge: true });
+      }
+    });
+  } catch (e) {
+    console.error("clearAttempts failed (non-fatal):", e);
+  }
+}
+
+function lockedResponse(seconds) {
+  const minutes = Math.ceil(seconds / 60);
+  return {
+    statusCode: 429,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({ error: `Too many incorrect attempts. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.` })
+  };
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS_HEADERS, body: "" };
@@ -71,9 +142,15 @@ exports.handler = async (event) => {
     // first time), not just reconnecting to an existing one — the code
     // matching itself is the actual credential here, nothing else to check.
     if (actorType === "admin") {
+      const lockKey = "admin:" + syncCode;
+      const lockedFor = await checkLockout(syncCode, lockKey);
+      if (lockedFor > 0) return lockedResponse(lockedFor);
+
       if (String(secret) !== String(syncCode)) {
+        await recordFailedAttempt(syncCode, lockKey);
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Portal/Sync Code." }) };
       }
+      await clearAttempts(syncCode, lockKey);
       const token = await admin.auth().createCustomToken("admin-" + syncCode, {
         schoolCode: syncCode,
         role: "admin"
@@ -86,11 +163,16 @@ exports.handler = async (event) => {
     // (from before hashing was added) and migrates them to a hash right here
     // on success, so plaintext never lingers past this login.
     if (actorType === "teacher") {
+      const lockKey = "teacher:" + id;
+      const lockedFor = await checkLockout(syncCode, lockKey);
+      if (lockedFor > 0) return lockedResponse(lockedFor);
+
       const acctRef = dataRef.doc("teacherAccounts");
       const acctSnap = await acctRef.get();
       const accounts = acctSnap.exists ? (acctSnap.data().teacherAccounts || []) : [];
       const teacher = accounts.find(t => t.id === id);
       if (!teacher) {
+        await recordFailedAttempt(syncCode, lockKey);
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Staff ID or PIN." }) };
       }
       let verified = false;
@@ -106,8 +188,10 @@ exports.handler = async (event) => {
         await acctRef.set({ teacherAccounts: accounts }, { merge: true });
       }
       if (!verified) {
+        await recordFailedAttempt(syncCode, lockKey);
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Staff ID or PIN." }) };
       }
+      await clearAttempts(syncCode, lockKey);
       const token = await admin.auth().createCustomToken("teacher-" + syncCode + "-" + id, {
         schoolCode: syncCode,
         role: teacher.role || "teacher",
@@ -121,12 +205,17 @@ exports.handler = async (event) => {
     // before hashing was added) and migrates them to a hash right here on
     // success, so plaintext never lingers past this login.
     if (actorType === "student") {
+      const lockKey = "student:" + id;
+      const lockedFor = await checkLockout(syncCode, lockKey);
+      if (lockedFor > 0) return lockedResponse(lockedFor);
+
       const coreRef = dataRef.doc("core");
       const coreSnap = await coreRef.get();
       const coreData = coreSnap.exists ? coreSnap.data() : {};
       const students = coreData.students || [];
       const student = students.find(s => s.id === id);
       if (!student) {
+        await recordFailedAttempt(syncCode, lockKey);
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Student ID or password." }) };
       }
       let verified = false;
@@ -142,8 +231,10 @@ exports.handler = async (event) => {
         await coreRef.set({ students }, { merge: true });
       }
       if (!verified) {
+        await recordFailedAttempt(syncCode, lockKey);
         return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: "Incorrect Student ID or password." }) };
       }
+      await clearAttempts(syncCode, lockKey);
       const token = await admin.auth().createCustomToken("student-" + syncCode + "-" + id, {
         schoolCode: syncCode,
         role: "student",
