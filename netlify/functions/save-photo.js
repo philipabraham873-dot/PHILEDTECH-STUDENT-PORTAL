@@ -7,26 +7,20 @@
 // signed in) rather than re-asking for a password, since there's no
 // password involved in a photo upload.
 //
-// The photo itself is uploaded to Firebase Storage (not embedded in the
-// Firestore document) — Firestore documents cap at 1MB total and hold every
-// student's data for the whole school, so a handful of embedded photos
-// could fill that cap on their own. Only a private download link gets saved
-// into Firestore instead. That link carries a random access token (the same
-// scheme Firebase's own client SDK uses) rather than being made publicly
-// browsable, so a photo is only reachable by someone who already has the
-// exact link — not discoverable or guessable.
+// Note: this embeds the photo directly in the Firestore document (Storage
+// would be the better long-term home for it, but that needs Firebase's
+// paid Blaze plan enabled first — revisit this if/when that's turned on).
+// Keep an eye on this: Firestore documents cap at 1MB total for the WHOLE
+// school's data, so this doesn't scale forever — see the 400KB guard below.
 
 const admin = require("firebase-admin");
-const crypto = require("crypto");
 
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
-    storageBucket: "school-software-c511c.firebasestorage.app"
+    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
   });
 }
 const db = admin.firestore();
-const bucket = admin.storage().bucket();
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -65,53 +59,29 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: "Invalid request body." }) };
   }
   const { photoDataUrl } = body;
-  const match = typeof photoDataUrl === "string" && photoDataUrl.match(/^data:(image\/(png|jpeg));base64,(.+)$/);
-  if (!match) {
+  if (!photoDataUrl || typeof photoDataUrl !== "string" || !photoDataUrl.startsWith("data:image/")) {
     return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: "Missing or invalid photo." }) };
   }
-  const contentType = match[1];
-  const base64Data = match[3];
-  const buffer = Buffer.from(base64Data, "base64");
-  // No longer constrained by the 1MB Firestore document cap, but still a
-  // sane ceiling — nothing here should legitimately need more than this.
-  if (buffer.length > 3 * 1024 * 1024) {
+  // A generous but real ceiling — Firestore documents cap at 1MB total, and
+  // this doc holds every student's data, so one photo shouldn't be able to
+  // eat a meaningful chunk of that on its own.
+  if (photoDataUrl.length > 400000) {
     return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: "Photo is too large. Please use a smaller image." }) };
   }
 
   try {
-    // Confirm the student record actually exists before uploading anything.
     const coreRef = db.collection("schools").doc(claims.schoolCode).collection("data").doc("core");
-    const coreSnap = await coreRef.get();
-    if (!coreSnap.exists) {
-      return { statusCode: 404, headers: CORS_HEADERS, body: JSON.stringify({ error: "School data not found." }) };
-    }
-    const coreData = coreSnap.data() || {};
-    const students = coreData.students || [];
-    const idx = students.findIndex(s => s.id === claims.studentId);
-    if (idx === -1) {
-      return { statusCode: 404, headers: CORS_HEADERS, body: JSON.stringify({ error: "Student record not found." }) };
-    }
-
-    // Fixed path per student — re-uploading overwrites the previous photo
-    // (and the new random token below invalidates any old cached link).
-    const ext = contentType === "image/png" ? "png" : "jpg";
-    const filePath = `schools/${claims.schoolCode}/studentPhotos/${claims.studentId}.${ext}`;
-    const token = crypto.randomUUID();
-    const file = bucket.file(filePath);
-    await file.save(buffer, {
-      metadata: {
-        contentType,
-        metadata: { firebaseStorageDownloadTokens: token }
-      }
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(coreRef);
+      if (!snap.exists) throw new Error("School data not found.");
+      const data = snap.data() || {};
+      const students = data.students || [];
+      const idx = students.findIndex(s => s.id === claims.studentId);
+      if (idx === -1) throw new Error("Student record not found.");
+      students[idx] = Object.assign({}, students[idx], { photo: photoDataUrl });
+      tx.set(coreRef, { students }, { merge: true });
     });
-    const photoUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
-
-    await coreRef.set(
-      { students: students.map((s, i) => i === idx ? Object.assign({}, s, { photo: photoUrl }) : s) },
-      { merge: true }
-    );
-
-    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, photoUrl }) };
+    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true }) };
   } catch (err) {
     console.error(err);
     return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: err.message || "Server error. Try again." }) };

@@ -1438,8 +1438,8 @@ async function savePassportPhoto(){
       throw new Error(data.error || "Couldn't save your photo. Try again.");
     }
 
-    currentStudent.photo = data.photoUrl;
-    schoolData.students = schoolData.students.map(s => s.id === currentStudent.id ? Object.assign({}, s, {photo: data.photoUrl}) : s);
+    currentStudent.photo = pendingPassportDataUrl;
+    schoolData.students = schoolData.students.map(s => s.id === currentStudent.id ? Object.assign({}, s, {photo: pendingPassportDataUrl}) : s);
     pendingPassportDataUrl = null;
 
     okEl.textContent = "Passport photo saved. It's now visible to your school's admin.";
