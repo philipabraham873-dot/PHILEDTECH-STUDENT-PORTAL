@@ -1404,9 +1404,11 @@ function handlePassportFileChange(event){
   reader.readAsDataURL(file);
 }
 
-// Saves the resized photo into this student's record in the shared "core"
-// Firestore doc, using the same read-modify-write transaction pattern as
-// submitChangePassword() so it can't clobber a concurrent admin edit.
+// Saves the resized photo into this student's record. Goes through a
+// function rather than writing to Firestore directly, since a student
+// session only has read access now — the function trusts this student's
+// own signed-in session (their ID token) rather than needing a password,
+// since there's no password involved in a photo upload.
 async function savePassportPhoto(){
   if(!pendingPassportDataUrl) return;
   const errEl = document.getElementById("passportError");
@@ -1416,17 +1418,19 @@ async function savePassportPhoto(){
   btn.disabled = true; btn.textContent = "Saving…";
 
   try{
-    const coreRef = fbDb.collection("schools").doc(portalCode).collection("data").doc("core");
-    await fbDb.runTransaction(async (tx)=>{
-      const snap = await tx.get(coreRef);
-      if(!snap.exists) throw new Error("School data not found.");
-      const data = snap.data() || {};
-      const studentsArr = data.students || [];
-      const idx = studentsArr.findIndex(s => s.id === currentStudent.id);
-      if(idx === -1) throw new Error("Student record not found.");
-      studentsArr[idx] = Object.assign({}, studentsArr[idx], { photo: pendingPassportDataUrl });
-      tx.set(coreRef, { students: studentsArr }, { merge: true });
+    const idToken = await firebase.auth().currentUser.getIdToken();
+    const res = await fetch("https://philedtech-student-portal.netlify.app/.netlify/functions/save-photo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + idToken
+      },
+      body: JSON.stringify({ photoDataUrl: pendingPassportDataUrl })
     });
+    const data = await res.json();
+    if(!res.ok || !data.success){
+      throw new Error(data.error || "Couldn't save your photo. Try again.");
+    }
 
     currentStudent.photo = pendingPassportDataUrl;
     schoolData.students = schoolData.students.map(s => s.id === currentStudent.id ? Object.assign({}, s, {photo: pendingPassportDataUrl}) : s);
