@@ -994,7 +994,7 @@ function buildReportCardPage(stu, term, session){
     </div>
     <div class="rx"></div>
     <div class="rl" style="margin-top:4px;">
-      <label>PRINCIPAL'S REMARKS</label>
+      <label>${/^(nursery|primary)/i.test(stu.className) ? "HEAD TEACHER'S REMARKS" : "PRINCIPAL'S REMARKS"}</label>
       <div class="ul">${princRem}</div>
     </div>
     <div class="rx"></div>
